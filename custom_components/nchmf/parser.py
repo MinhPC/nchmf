@@ -127,8 +127,11 @@ def parse_html(raw: bytes | str) -> dict:
     current, today, night = parsed_blocks[0], parsed_blocks[1], parsed_blocks[2]
 
     # ---- Dự báo 10 ngày ----
+    # Tìm trên TOÀN soup, KHÔNG scope vào .content-news: trang không đóng thẻ
+    # chuẩn nên html.parser đẩy các .item-days-wt ra ngoài .content-news
+    # (scope vào content sẽ ra rỗng -> forecast trống -> card quay vòng mãi).
     forecast: list[dict] = []
-    for item in content.select(".item-days-wt"):
+    for item in soup.select(".item-days-wt"):
         date_el = item.select_one(".date-wt")
         hi_el = item.select_one(".large-temp")
         lo_el = item.select_one(".small-temp")  # phần tử đầu = nhiệt độ thấp

@@ -71,7 +71,10 @@ Nếu nchmf đổi giao diện → sensor về None/unavailable → **90% là do
     ul.list-info-wt li           -> mỗi dòng thông tin
       .uk-width-1-4              -> nhãn: "Nhiệt độ" / "Thời tiết" / "Độ ẩm" / "Hướng gió"
       .uk-width-3-4              -> giá trị, dạng ": 34°C" (đã lstrip ":")
-  .item-days-wt          (x~9)   -> mỗi ngày forecast
+
+.item-days-wt          (x~9)     -> mỗi ngày forecast — ⚠️ NẰM NGOÀI .content-news!
+                                    (trang không đóng thẻ chuẩn, html.parser đẩy ra ngoài)
+                                    => parser phải select trên TOÀN `soup`, KHÔNG scope content
     .date-wt > span              -> ngày "02/07/2026"; weekday = text trừ đi ngày
     .large-temp                  -> nhiệt độ CAO "34°C"
     .small-temp  (phần tử ĐẦU)   -> nhiệt độ THẤP "26°C"  (mỗi ngày có 4 .small-temp:
@@ -162,11 +165,13 @@ Tất cả gom trong 1 device, có `attribution` = nguồn nchmf.gov.vn.
   ("Gió đông"→90, "Gió đông bắc"→45...). Tổ hợp 2 chữ phải xét trước 1 chữ.
 - **`async_config_entry_first_refresh`**: fetch fail lần đầu → raise ConfigEntryNotReady
   (HA tự retry), thay cho `async_refresh` cũ.
-- **`_handle_coordinator_update`** gọi `super()` (ghi state hiện tại) + `self.async_update_listeners()`
-  (đẩy forecast tới card đang subscribe). LƯU Ý: `async_update_listeners` trên WeatherEntity
-  là một `@callback` ĐỒNG BỘ → gọi trực tiếp, KHÔNG bọc trong `async_create_task`
-  (bọc vào sẽ truyền `None` cho `async_create_task` và raise mỗi lần update). Cũng khác
-  với `coordinator.async_update_listeners` — đừng nhầm.
+- **`_handle_coordinator_update`** gọi `super()` (ghi state hiện tại) +
+  `self.hass.async_create_task(self.async_update_listeners(None))` (đẩy forecast tới card
+  đang subscribe). LƯU Ý QUAN TRỌNG: `WeatherEntity.async_update_listeners` là **COROUTINE**
+  (khác `coordinator.async_update_listeners` là `@callback` đồng bộ — đừng nhầm) VÀ **bắt buộc
+  tham số `forecast_types`** (không có default). Vì `_handle_coordinator_update` là `@callback`
+  không await được → phải bọc `async_create_task` và truyền `None` (mọi loại forecast).
+  Gọi thiếu tham số = `TypeError`; gọi thẳng không await = coroutine bị bỏ, forecast không refresh.
 - **Parse trong executor**: BeautifulSoup sync, không chạy trong event loop.
 - **`asyncio.timeout(30)`**: cần Python 3.11+ (HA hiện đại có). Nếu HA quá cũ báo lỗi
   dòng này -> đổi sang `import async_timeout` + `async with async_timeout.timeout(30)`.
@@ -205,7 +210,8 @@ Lấy `trang_that.html`: `curl <URL> -o trang_that.html` từ máy có mạng, r
 | Entity `unknown`, không có lỗi | `.content-news` còn nhưng selector con đổi | So HTML thật với mục 4; sửa selector trong `parser.py` |
 | `parser raise ValueError` | `.content-news` biến mất (đổi layout) | Xem HTML thật, tìm container mới |
 | Nhiệt độ thấp sai (lấy nhầm °%/gió) | thứ tự `.small-temp` đổi | Đổi `select_one(".small-temp")` sang selector cụ thể hơn |
-| Forecast không refresh | `async_update_listeners` không được gọi | Kiểm `_handle_coordinator_update` trong `weather.py` |
+| Forecast card **quay vòng mãi** | forecast list rỗng (parser scope sai `.item-days-wt`) | `.item-days-wt` nằm NGOÀI `.content-news` → select trên `soup`, không phải `content` |
+| Forecast không refresh (30') | `async_update_listeners` gọi sai (thiếu arg / không await) | Kiểm `_handle_coordinator_update`: `async_create_task(self.async_update_listeners(None))` |
 | Icon điều kiện sai | map thiếu keyword | Thêm nhánh vào `map_condition` |
 | Restart lâu / lỗi import bs4 | requirement chưa cài | Log; bs4 vốn có sẵn trong HA core |
 | Lỗi dòng `asyncio.timeout` | HA/Python quá cũ | Đổi sang `async_timeout` (mục 8) |
@@ -248,3 +254,8 @@ logger:
   past_temps đúng; map điều kiện đúng cho rainy/sunny/lightning-rainy; `wind_bearing`
   đã test unit (8 case). Chưa chạy config flow trên HA thật.
   (Tiền thân: một bản scrape cấu hình bằng YAML, cố định Đà Nẵng — đã thay thế.)
+- v1.0.1 — **fix forecast card quay vòng mãi**: `.item-days-wt` nằm NGOÀI `.content-news`
+  (html.parser lệch lồng thẻ) nên forecast parse ra rỗng → select trên toàn `soup`.
+  Sửa `_handle_coordinator_update`: `async_update_listeners` là coroutine + cần arg
+  `forecast_types` → `async_create_task(self.async_update_listeners(None))`.
+  Xác minh trên HTML live (2026-07): forecast = 9 ngày.

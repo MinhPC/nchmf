@@ -95,7 +95,8 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         # Ghi state hiện tại + đẩy forecast tới các card đang subscribe.
-        # async_update_listeners là @callback đồng bộ -> gọi trực tiếp,
-        # KHÔNG bọc trong async_create_task (nó không phải coroutine).
+        # WeatherEntity.async_update_listeners là COROUTINE và bắt buộc có
+        # tham số forecast_types -> phải truyền None (mọi loại) và bọc trong
+        # async_create_task (đang ở @callback đồng bộ nên không await được).
         super()._handle_coordinator_update()
-        self.async_update_listeners()
+        self.hass.async_create_task(self.async_update_listeners(None))
