@@ -1,2 +1,7 @@
-__pycache__/__init__.cpython-313.pyc
-/__pycache__
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.DS_Store
+trang_that.html

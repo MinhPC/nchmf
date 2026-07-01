@@ -1,10 +1,11 @@
 {
   "domain": "nchmf",
   "name": "NCHMF Weather (Da Nang)",
-  "codeowners": [],
+  "codeowners": ["@MinhPC"],
   "config_flow": false,
-  "documentation": "https://www.nchmf.gov.vn/kttv/vi-VN/1/da-nang-w55.html",
+  "documentation": "https://github.com/MinhPC/nchmf",
   "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/MinhPC/nchmf/issues",
   "requirements": ["beautifulsoup4"],
   "version": "1.0.0"
 }
