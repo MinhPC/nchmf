@@ -15,9 +15,12 @@ from homeassistant.util import dt as dt_util
 def map_condition(text: str) -> str:
     """Map mô tả tiếng Việt của nchmf -> mã điều kiện chuẩn của Home Assistant."""
     c = (text or "").lower()
-    if "dông" in c or "dong" in c:
+    # "không mưa" = KHÔNG có mưa -> đừng để chuỗi con "mưa" kích hoạt nhánh rainy.
+    # (nchmf mô tả "Có mây, không mưa" -> phải ra cloudy/partlycloudy, không phải rainy)
+    has_rain = "mưa" in c and "không mưa" not in c
+    if has_rain and ("dông" in c or "dong" in c):
         return "lightning-rainy"
-    if "mưa" in c:
+    if has_rain:
         return "rainy"
     if "sương mù" in c or "mù" in c:
         return "fog"
