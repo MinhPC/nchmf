@@ -32,6 +32,29 @@ def map_condition(text: str) -> str:
     return "partlycloudy"
 
 
+# Hướng gió tiếng Việt -> độ (0-360, hướng gió THỔI TỪ, theo la bàn).
+# Xếp tổ hợp 2 chữ trước để "đông bắc" khớp trước "đông"/"bắc".
+_WIND_BEARINGS = [
+    ("đông bắc", 45),
+    ("đông nam", 135),
+    ("tây bắc", 315),
+    ("tây nam", 225),
+    ("bắc", 0),
+    ("đông", 90),
+    ("nam", 180),
+    ("tây", 270),
+]
+
+
+def wind_bearing(text: str) -> int | None:
+    """Map 'Gió đông bắc' -> 45. None nếu không nhận ra hướng."""
+    c = (text or "").lower()
+    for name, deg in _WIND_BEARINGS:
+        if name in c:
+            return deg
+    return None
+
+
 def _int(text: str) -> int | None:
     m = re.search(r"-?\d+", text or "")
     return int(m.group()) if m else None
@@ -73,6 +96,7 @@ def _parse_block(block) -> dict:
         "humidity": _int(values.get("Độ ẩm", "")),
         "wind_speed": _wind_speed(wind_raw),
         "wind_dir": wind_dir,
+        "wind_bearing": wind_bearing(wind_dir or wind_raw),
         "condition_text": cond_text,
         "condition": map_condition(cond_text) if cond_text else None,
         "update_time": update_time,

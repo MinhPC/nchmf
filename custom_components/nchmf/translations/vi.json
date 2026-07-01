@@ -1,0 +1,29 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Thời tiết NCHMF",
+        "description": "Nhập URL trang nchmf của tỉnh/thành bạn muốn. Lấy trên nchmf.gov.vn (đổi mã `w..`). Mặc định là Đà Nẵng.",
+        "data": {
+          "url": "URL trang nchmf",
+          "name": "Tên (tuỳ chọn)"
+        }
+      },
+      "reconfigure": {
+        "title": "Cấu hình lại địa điểm NCHMF",
+        "description": "Đổi URL trang nchmf hoặc tên hiển thị.",
+        "data": {
+          "url": "URL trang nchmf",
+          "name": "Tên (tuỳ chọn)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Không tải/phân tích được trang. Kiểm tra lại URL."
+    },
+    "abort": {
+      "already_configured": "Địa điểm này đã được cấu hình.",
+      "reconfigure_successful": "Đã lưu cấu hình lại."
+    }
+  }
+}

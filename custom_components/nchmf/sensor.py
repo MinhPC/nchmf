@@ -6,6 +6,7 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     PERCENTAGE,
     UnitOfSpeed,
@@ -13,36 +14,42 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import ATTRIBUTION, CONF_URL, DOMAIN
 
 
-async def async_setup_platform(
+async def async_setup_entry(
     hass: HomeAssistant,
-    config: ConfigType,
+    entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
-    discovery_info: DiscoveryInfoType | None = None,
 ) -> None:
-    coordinator = hass.data[DOMAIN]
+    coordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities(
         [
-            NchmfTemp(coordinator),
-            NchmfHumidity(coordinator),
-            NchmfWind(coordinator),
-            NchmfPastTemps(coordinator),
+            NchmfTemp(coordinator, entry),
+            NchmfHumidity(coordinator, entry),
+            NchmfWind(coordinator, entry),
+            NchmfPastTemps(coordinator, entry),
         ]
     )
 
 
 class _Base(CoordinatorEntity, SensorEntity):
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
+    _attr_attribution = ATTRIBUTION
 
-    def __init__(self, coordinator, key: str, name: str) -> None:
+    def __init__(self, coordinator, entry: ConfigEntry, key: str, name: str) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{DOMAIN}_{key}"
+        self._attr_unique_id = f"{entry.entry_id}_{key}"
         self._attr_name = name
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, entry.entry_id)},
+            "name": entry.title,
+            "manufacturer": "NCHMF",
+            "model": "Web scrape",
+            "configuration_url": entry.data.get(CONF_URL),
+        }
 
     @property
     def _data(self) -> dict:
@@ -58,8 +65,8 @@ class NchmfTemp(_Base):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
 
-    def __init__(self, coordinator) -> None:
-        super().__init__(coordinator, "temperature", "NCHMF Đà Nẵng Nhiệt độ")
+    def __init__(self, coordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, "temperature", "Nhiệt độ")
 
     @property
     def native_value(self):
@@ -71,8 +78,8 @@ class NchmfHumidity(_Base):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = PERCENTAGE
 
-    def __init__(self, coordinator) -> None:
-        super().__init__(coordinator, "humidity", "NCHMF Đà Nẵng Độ ẩm")
+    def __init__(self, coordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, "humidity", "Độ ẩm")
 
     @property
     def native_value(self):
@@ -84,8 +91,8 @@ class NchmfWind(_Base):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfSpeed.METERS_PER_SECOND
 
-    def __init__(self, coordinator) -> None:
-        super().__init__(coordinator, "wind_speed", "NCHMF Đà Nẵng Gió")
+    def __init__(self, coordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, "wind_speed", "Gió")
 
     @property
     def native_value(self):
@@ -93,16 +100,21 @@ class NchmfWind(_Base):
 
     @property
     def extra_state_attributes(self) -> dict:
-        return {"wind_dir": self._current.get("wind_dir")}
+        return {
+            "wind_dir": self._current.get("wind_dir"),
+            "wind_bearing": self._current.get("wind_bearing"),
+        }
 
 
 class NchmfPastTemps(_Base):
     """Mảng nhiệt độ 10 ngày qua (mỗi 3h) để vẽ chart (apexcharts data_generator)."""
 
     _attr_icon = "mdi:chart-line"
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
 
-    def __init__(self, coordinator) -> None:
-        super().__init__(coordinator, "past_temps", "NCHMF Đà Nẵng Nhiệt độ 10 ngày qua")
+    def __init__(self, coordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, "past_temps", "Nhiệt độ 10 ngày qua")
 
     @property
     def native_value(self):

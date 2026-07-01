@@ -1,8 +1,8 @@
 {
   "domain": "nchmf",
-  "name": "NCHMF Weather (Da Nang)",
+  "name": "Vietnam Weather (NCHMF)",
   "codeowners": ["@MinhPC"],
-  "config_flow": false,
+  "config_flow": true,
   "documentation": "https://github.com/MinhPC/nchmf",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/MinhPC/nchmf/issues",

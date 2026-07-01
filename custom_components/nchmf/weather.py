@@ -6,37 +6,44 @@ from homeassistant.components.weather import (
     WeatherEntity,
     WeatherEntityFeature,
 )
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfSpeed, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import ATTRIBUTION, CONF_URL, DOMAIN
 
 
-async def async_setup_platform(
+async def async_setup_entry(
     hass: HomeAssistant,
-    config: ConfigType,
+    entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
-    discovery_info: DiscoveryInfoType | None = None,
 ) -> None:
-    coordinator = hass.data[DOMAIN]
-    async_add_entities([NchmfWeather(coordinator)])
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    async_add_entities([NchmfWeather(coordinator, entry)])
 
 
 class NchmfWeather(CoordinatorEntity, WeatherEntity):
     """Weather entity dựng từ dữ liệu scrape."""
 
-    _attr_has_entity_name = False
-    _attr_name = "NCHMF Đà Nẵng"
+    _attr_has_entity_name = True
+    _attr_name = None  # entity chính -> lấy tên theo device
+    _attr_attribution = ATTRIBUTION
     _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_native_wind_speed_unit = UnitOfSpeed.METERS_PER_SECOND
     _attr_supported_features = WeatherEntityFeature.FORECAST_DAILY
 
-    def __init__(self, coordinator) -> None:
+    def __init__(self, coordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{DOMAIN}_weather"
+        self._attr_unique_id = f"{entry.entry_id}_weather"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, entry.entry_id)},
+            "name": entry.title,
+            "manufacturer": "NCHMF",
+            "model": "Web scrape",
+            "configuration_url": entry.data.get(CONF_URL),
+        }
 
     @property
     def _current(self) -> dict:
@@ -57,6 +64,10 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
     @property
     def native_wind_speed(self):
         return self._current.get("wind_speed")
+
+    @property
+    def native_wind_bearing(self):
+        return self._current.get("wind_bearing")
 
     @property
     def extra_state_attributes(self) -> dict:
