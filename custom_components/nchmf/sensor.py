@@ -39,10 +39,9 @@ class _Base(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
     _attr_attribution = ATTRIBUTION
 
-    def __init__(self, coordinator, entry: ConfigEntry, key: str, name: str) -> None:
+    def __init__(self, coordinator, entry: ConfigEntry, key: str) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_{key}"
-        self._attr_name = name
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
             "name": entry.title,
@@ -60,13 +59,15 @@ class _Base(CoordinatorEntity, SensorEntity):
         return self._data.get("current", {}) or {}
 
 
+# Nhiệt độ / độ ẩm / gió: KHÔNG đặt name -> HA lấy tên theo device_class (đã
+# dịch sẵn en/vi). entity_id của bản đã cài giữ nguyên (nằm trong registry).
 class NchmfTemp(_Base):
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
 
     def __init__(self, coordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator, entry, "temperature", "Nhiệt độ")
+        super().__init__(coordinator, entry, "temperature")
 
     @property
     def native_value(self):
@@ -79,7 +80,7 @@ class NchmfHumidity(_Base):
     _attr_native_unit_of_measurement = PERCENTAGE
 
     def __init__(self, coordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator, entry, "humidity", "Độ ẩm")
+        super().__init__(coordinator, entry, "humidity")
 
     @property
     def native_value(self):
@@ -92,7 +93,7 @@ class NchmfWind(_Base):
     _attr_native_unit_of_measurement = UnitOfSpeed.METERS_PER_SECOND
 
     def __init__(self, coordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator, entry, "wind_speed", "Gió")
+        super().__init__(coordinator, entry, "wind_speed")
 
     @property
     def native_value(self):
@@ -110,11 +111,14 @@ class NchmfPastTemps(_Base):
     """Mảng nhiệt độ 10 ngày qua (mỗi 3h) để vẽ chart (apexcharts data_generator)."""
 
     _attr_icon = "mdi:chart-line"
+    _attr_translation_key = "past_temperatures"
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_device_class = SensorDeviceClass.TEMPERATURE
+    # Mảng ~77 phần tử -> đừng ghi vào recorder mỗi lần cập nhật.
+    _unrecorded_attributes = frozenset({"temperatures", "times"})
 
     def __init__(self, coordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator, entry, "past_temps", "Nhiệt độ 10 ngày qua")
+        super().__init__(coordinator, entry, "past_temps")
 
     @property
     def native_value(self):

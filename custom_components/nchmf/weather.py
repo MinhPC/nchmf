@@ -15,6 +15,19 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import ATTRIBUTION, CONF_URL, DOMAIN
 
 
+def _summary(block: dict | None) -> dict | None:
+    """Rút gọn khối hôm nay/đêm nay cho attribute (None nếu rỗng)."""
+    if not block:
+        return None
+    return {
+        "temperature": block.get("temp"),
+        "humidity": block.get("humidity"),
+        "wind_speed": block.get("wind_speed"),
+        "wind_dir": block.get("wind_dir"),
+        "condition_text": block.get("condition_text"),
+    }
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -51,7 +64,15 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
 
     @property
     def condition(self) -> str | None:
-        return self._current.get("condition")
+        cond = self._current.get("condition")
+        # Trời quang ban đêm -> clear-night để ra icon mặt trăng (HA không tự đổi).
+        if cond == "sunny" and self._is_night():
+            return "clear-night"
+        return cond
+
+    def _is_night(self) -> bool:
+        sun = self.hass.states.get("sun.sun")
+        return sun is not None and sun.state == "below_horizon"
 
     @property
     def native_temperature(self):
@@ -77,17 +98,21 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
             "condition_text": self._current.get("condition_text"),
             "wind_dir": self._current.get("wind_dir"),
             "update_time": data.get("update_time"),
+            "today": _summary(data.get("today")),
+            "tonight": _summary(data.get("night")),
         }
 
     async def async_forecast_daily(self) -> list[Forecast]:
         out: list[Forecast] = []
         for d in (self.coordinator.data or {}).get("forecast", []):
+            if not d.get("datetime"):
+                continue
             out.append(
                 Forecast(
                     datetime=d["datetime"],
-                    condition=d["condition"],
-                    native_temperature=d["temperature"],
-                    native_templow=d["templow"],
+                    condition=d.get("condition"),
+                    native_temperature=d.get("temperature"),
+                    native_templow=d.get("templow"),
                 )
             )
         return out

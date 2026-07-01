@@ -3,27 +3,51 @@
     "step": {
       "user": {
         "title": "Vietnam Weather (NCHMF)",
-        "description": "Enter the NCHMF page URL for the province you want. Find it on nchmf.gov.vn (change the `w..` code). The default is Da Nang.",
+        "description": "Choose a province from the list, or paste an NCHMF page URL (from nchmf.gov.vn). The default is Da Nang.",
         "data": {
-          "url": "NCHMF page URL",
+          "url": "Province / NCHMF page URL",
           "name": "Name (optional)"
         }
       },
       "reconfigure": {
         "title": "Reconfigure NCHMF location",
-        "description": "Change the NCHMF page URL or display name.",
+        "description": "Change the province/URL or the display name.",
         "data": {
-          "url": "NCHMF page URL",
+          "url": "Province / NCHMF page URL",
           "name": "Name (optional)"
         }
       }
     },
     "error": {
-      "cannot_connect": "Could not fetch or parse the page. Check the URL."
+      "cannot_connect": "Could not fetch or parse the page. Check the URL.",
+      "already_configured": "This location is already configured."
     },
     "abort": {
       "already_configured": "This location is already configured.",
       "reconfigure_successful": "Reconfiguration saved."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "NCHMF options",
+        "data": {
+          "scan_interval": "Update interval (minutes)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "past_temperatures": {
+        "name": "Temperature (past 10 days)"
+      }
+    }
+  },
+  "issues": {
+    "no_data": {
+      "title": "NCHMF: no data parsed for {name}",
+      "description": "The integration fetched {url} but could not parse temperature or forecast. The NCHMF page layout may have changed. Check for an integration update, or report the issue."
     }
   }
 }

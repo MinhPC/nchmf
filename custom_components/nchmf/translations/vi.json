@@ -2,28 +2,52 @@
   "config": {
     "step": {
       "user": {
-        "title": "Thời tiết NCHMF",
-        "description": "Nhập URL trang nchmf của tỉnh/thành bạn muốn. Lấy trên nchmf.gov.vn (đổi mã `w..`). Mặc định là Đà Nẵng.",
+        "title": "Thời tiết Việt Nam (NCHMF)",
+        "description": "Chọn tỉnh/thành trong danh sách, hoặc dán URL trang nchmf (từ nchmf.gov.vn). Mặc định là Đà Nẵng.",
         "data": {
-          "url": "URL trang nchmf",
+          "url": "Tỉnh/thành / URL trang nchmf",
           "name": "Tên (tuỳ chọn)"
         }
       },
       "reconfigure": {
         "title": "Cấu hình lại địa điểm NCHMF",
-        "description": "Đổi URL trang nchmf hoặc tên hiển thị.",
+        "description": "Đổi tỉnh/URL hoặc tên hiển thị.",
         "data": {
-          "url": "URL trang nchmf",
+          "url": "Tỉnh/thành / URL trang nchmf",
           "name": "Tên (tuỳ chọn)"
         }
       }
     },
     "error": {
-      "cannot_connect": "Không tải/phân tích được trang. Kiểm tra lại URL."
+      "cannot_connect": "Không tải/phân tích được trang. Kiểm tra lại URL.",
+      "already_configured": "Địa điểm này đã được cấu hình."
     },
     "abort": {
       "already_configured": "Địa điểm này đã được cấu hình.",
       "reconfigure_successful": "Đã lưu cấu hình lại."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Tuỳ chọn NCHMF",
+        "data": {
+          "scan_interval": "Chu kỳ cập nhật (phút)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "past_temperatures": {
+        "name": "Nhiệt độ 10 ngày qua"
+      }
+    }
+  },
+  "issues": {
+    "no_data": {
+      "title": "NCHMF: không lấy được dữ liệu cho {name}",
+      "description": "Đã tải {url} nhưng không phân tích được nhiệt độ/dự báo. Có thể trang nchmf đã đổi giao diện. Hãy kiểm tra bản cập nhật integration hoặc báo lỗi."
     }
   }
 }

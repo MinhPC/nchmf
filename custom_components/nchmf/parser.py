@@ -55,6 +55,25 @@ def wind_bearing(text: str) -> int | None:
     return None
 
 
+_PROVINCE_HREF = re.compile(r"^(?:https://www\.nchmf\.gov\.vn)?/kttv/vi-VN/1/[a-z0-9-]+-w\d+\.html$")
+
+
+def parse_provinces(raw: bytes | str) -> dict[str, str]:
+    """Từ trang index nchmf -> {url tuyệt đối: tên tỉnh}. Rỗng nếu không có."""
+    html = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else raw
+    soup = BeautifulSoup(html, "html.parser")
+    out: dict[str, str] = {}
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        if not _PROVINCE_HREF.match(href):
+            continue
+        url = href if href.startswith("http") else "https://www.nchmf.gov.vn" + href
+        name = a.get_text(" ", strip=True)
+        if name and url not in out:
+            out[url] = name
+    return out
+
+
 def _int(text: str) -> int | None:
     m = re.search(r"-?\d+", text or "")
     return int(m.group()) if m else None
@@ -113,7 +132,7 @@ def parse_html(raw: bytes | str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
 
     loc_el = soup.select_one(".tt-news")
-    location = loc_el.get_text(" ", strip=True) if loc_el else "Đà Nẵng"
+    location = loc_el.get_text(" ", strip=True) if loc_el else "NCHMF"
 
     content = soup.select_one(".content-news")
     if content is None:
@@ -165,16 +184,18 @@ def parse_html(raw: bytes | str) -> dict:
         )
 
     # ---- Mảng nhiệt độ 10 ngày qua (từ script Highcharts) ----
+    # Chọn MẢNG SỐ DÀI NHẤT trong các "data:[...]" (series nhiệt độ ~76 điểm),
+    # tránh vớ nhầm mảng số ngắn khác nếu trang có thêm chart.
     past_temps: list[int] = []
+    for m in re.finditer(r"data:\s*\[([-\d,\s]+)\]", html):
+        nums = [int(x) for x in re.findall(r"-?\d+", m.group(1))]
+        if len(nums) > len(past_temps):
+            past_temps = nums
     past_times: list[str] = []
-    data_match = re.search(r"data:\s*\[([-\d,\s]+)\]", html)
-    if data_match:
-        past_temps = [
-            int(x) for x in re.findall(r"-?\d+", data_match.group(1))
-        ]
-    cats_match = re.search(r"categories:\s*\[([^\]]+)\]", html)
-    if cats_match:
-        past_times = re.findall(r"'([^']+)'", cats_match.group(1))
+    for m in re.finditer(r"categories:\s*\[([^\]]+)\]", html):
+        ts = re.findall(r"'([^']+)'", m.group(1))
+        if len(ts) > len(past_times):
+            past_times = ts
 
     return {
         "location": location,

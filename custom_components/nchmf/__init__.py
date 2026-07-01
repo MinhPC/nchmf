@@ -7,13 +7,21 @@ from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
 )
 
-from .const import CONF_URL, DOMAIN, SCAN_INTERVAL_MINUTES, USER_AGENT
+from .const import (
+    CONF_SCAN_INTERVAL,
+    CONF_URL,
+    DEFAULT_SCAN_INTERVAL_MINUTES,
+    DOMAIN,
+    ISSUE_NO_DATA,
+    USER_AGENT,
+)
 from .parser import parse_html
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,11 +44,14 @@ class NchmfCoordinator(DataUpdateCoordinator):
     """Fetch + parse trang nchmf, chia sẻ cho weather và sensor."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+        minutes = entry.options.get(
+            CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_MINUTES
+        )
         super().__init__(
             hass,
             _LOGGER,
             name=f"{DOMAIN} {entry.title}",
-            update_interval=timedelta(minutes=SCAN_INTERVAL_MINUTES),
+            update_interval=timedelta(minutes=minutes),
             config_entry=entry,
         )
         self._url = entry.data[CONF_URL]
@@ -52,9 +63,35 @@ class NchmfCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(f"Lỗi tải trang nchmf: {err}") from err
 
         try:
-            return await self.hass.async_add_executor_job(parse_html, raw)
+            data = await self.hass.async_add_executor_job(parse_html, raw)
         except Exception as err:  # noqa: BLE001
             raise UpdateFailed(f"Lỗi phân tích trang nchmf: {err}") from err
+
+        self._check_health(data)
+        return data
+
+    def _check_health(self, data: dict) -> None:
+        """Tạo/xoá repair issue: parse OK nhưng thiếu dữ liệu lõi = site đổi layout."""
+        issue_id = f"{ISSUE_NO_DATA}_{self.config_entry.entry_id}"
+        healthy = (
+            data.get("current", {}).get("temp") is not None
+            or bool(data.get("forecast"))
+        )
+        if healthy:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+        else:
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key=ISSUE_NO_DATA,
+                translation_placeholders={
+                    "name": self.config_entry.title,
+                    "url": self._url,
+                },
+            )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
