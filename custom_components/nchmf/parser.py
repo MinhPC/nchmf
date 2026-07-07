@@ -28,7 +28,9 @@ def map_condition(text: str) -> str:
         return "lightning-rainy"
     if has_rain:
         return "rainy"
-    if "sương mù" in c or "mù" in c:
+    # "mù" trần cũng khớp chuỗi con "mùa" (vd "chuyển mùa") -> loại trừ như guard
+    # "không mưa" ở trên, chỉ nhận sương mù / trời mù thực sự.
+    if "sương mù" in c or ("mù" in c and "mùa" not in c):
         return "fog"
     if "nhiều mây" in c:
         return "cloudy"

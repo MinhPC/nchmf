@@ -11,6 +11,7 @@ from homeassistant.const import UnitOfSpeed, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from .const import ATTRIBUTION, DOMAIN
 
@@ -35,8 +36,6 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
     _attr_supported_features = (
         WeatherEntityFeature.FORECAST_DAILY | WeatherEntityFeature.FORECAST_HOURLY
     )
-    # Mảng forecast (kèm icon KTTV) cho custom card -> đừng ghi recorder mỗi lần.
-    _unrecorded_attributes = frozenset({"forecast_daily", "forecast_hourly"})
 
     def __init__(self, coordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
@@ -44,8 +43,8 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
             "name": entry.title,
-            "manufacturer": "KTTV / NCHMF",
-            "model": "khituongvietnam.gov.vn API",
+            "manufacturer": "Minh Phan",
+            "model": "Vietnam Weather",
         }
 
     @property
@@ -102,35 +101,14 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
             "current_source": data.get("current_source"),
             "observation_station": cur.get("obs_station"),
             "observation_time": cur.get("obs_time"),
-            # Mảng forecast kèm icon KTTV + PoP/độ ẩm/gió cho custom card.
-            "forecast_daily": self._forecast_attr("daily"),
-            "forecast_hourly": self._forecast_attr("hourly"),
         }
 
-    def _forecast_attr(self, key: str) -> list[dict]:
-        """Mảng forecast rút gọn (kèm icon KTTV) để dựng card giống trang chủ."""
-        out: list[dict] = []
-        for d in (self.coordinator.data or {}).get(key, []):
-            out.append(
-                {
-                    "datetime": d.get("datetime"),
-                    "temperature": d.get("temperature", d.get("temp")),
-                    "templow": d.get("templow"),
-                    "condition": d.get("condition"),
-                    "condition_text": d.get("condition_text"),
-                    "precipitation_probability": d.get("pop"),
-                    "precipitation": d.get("precipitation"),  # lượng mưa (mm)
-                    "humidity": d.get("humidity"),
-                    "wind_speed": d.get("wind_speed"),
-                    "wind_dir": d.get("wind_dir"),
-                    "icon": d.get("icon"),
-                }
-            )
-        return out
-
-    def _forecast(self, key: str) -> list[Forecast]:
+    def _forecast(self, key: str, drop_past: bool = False) -> list[Forecast]:
+        records = (self.coordinator.data or {}).get(key, [])
+        if drop_past:
+            records = self._future_only(records)
         out: list[Forecast] = []
-        for d in (self.coordinator.data or {}).get(key, []):
+        for d in records:
             if not d.get("datetime"):
                 continue
             out.append(
@@ -152,7 +130,21 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
         return self._forecast("daily")
 
     async def async_forecast_hourly(self) -> list[Forecast]:
-        return self._forecast("hourly")
+        # Nguồn chỉ có 4 điểm 1/7/13/19 của HÔM NAY -> bỏ điểm đã qua để card
+        # không hiển thị giờ quá khứ. Giữ điểm của giờ hiện tại (mốc >= đầu giờ).
+        return self._forecast("hourly", drop_past=True)
+
+    @staticmethod
+    def _future_only(records: list[dict]) -> list[dict]:
+        """Lọc bỏ điểm có datetime trước giờ hiện tại; nếu lọc hết (cuối ngày mọi
+        điểm đã qua) thì GIỮ NGUYÊN để tránh forecast rỗng làm card quay vòng."""
+        floor = dt_util.now().replace(minute=0, second=0, microsecond=0)
+        future = []
+        for d in records:
+            when = dt_util.parse_datetime(d.get("datetime") or "")
+            if when is None or when >= floor:
+                future.append(d)
+        return future or records
 
     @callback
     def _handle_coordinator_update(self) -> None:

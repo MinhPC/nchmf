@@ -59,7 +59,7 @@ Người dùng chỉ cần **Reconfigure (bản đồ)** để chỉnh đúng ph
 | `__init__.py` | `async_setup_entry`/`async_unload_entry` + `async_migrate_entry` + `NchmfCoordinator` + `async_fetch_json` + `async_fetch_obs` (quan trắc) + `async_discover_stations` + `_check_health`. Gọi forecast+obs SONG SONG, ghép `current`. |
 | `config_flow.py` | 2 bước: `_async_center_step` (bản đồ, dùng chung user/reconfigure) → `async_step_station` (dropdown trạm gần) + `NchmfOptionsFlow` (scan interval). |
 | `parser.py` | `transform`, `map_condition`, `wind_direction(deg)`, `pick_current`, `parse_obs` (quan trắc), `wind_bearing_vn` + `haversine_km`/`sample_points`/`rank_stations`. **Hàm THUẦN, test ngoài HA.** |
-| `weather.py` | Weather entity — condition (+ `clear-night`) + current + forecast **daily & hourly** + `native_wind_bearing` + device_info. |
+| `weather.py` | Weather entity — condition (+ `clear-night`) + current + forecast **daily & hourly** (hourly BỎ điểm giờ đã qua, có fallback) + `native_wind_bearing` + device_info. |
 | `sensor.py` | 9 sensor: nhiệt độ/độ ẩm/gió/**lượng mưa** (tên theo device_class) + **xác suất mưa/mây/hướng gió/điều kiện** (`translation_key`) + **trạm quan trắc** (diagnostic). Chung device_info. |
 | `binary_sensor.py` | 1 binary_sensor **cảnh báo** (`warning`, device_class `safety`): on khi `current["warning"]` (Weather_War) khác rỗng. Chung device_info. |
 | `diagnostics.py` | `async_get_config_entry_diagnostics` — xuất coordinator.data + entry (lat/lon). |
@@ -167,11 +167,15 @@ entity_id do HA sinh từ tên device (entry.title = tên phường) + tên enti
   `FORECAST_DAILY | FORECAST_HOURLY`: daily 10 ngày, hourly 4 điểm (1/7/13/19h).
   Forecast có `native_temperature/templow, humidity, native_wind_speed, wind_bearing,
   precipitation_probability, native_precipitation`. `native_wind_bearing` = Direction (độ).
-  Attr phụ: `location, province, condition_text, wind_dir, precipitation_probability,
+  Attr phụ: `location, province, condition_text, wind_dir, wind_speed_ms, precipitation_probability,
   precipitation, cloud, icon_url (icon KTTV hiện tại), warning, update_time, current_source,
-  observation_station/time`, và `forecast_daily`/`forecast_hourly` (mảng KÈM icon KTTV cho
-  custom card — unrecorded).
+  observation_station/time`.
   Card: `type: weather-forecast`, `forecast_type: daily` hoặc `hourly`.
+  > **Custom card ĐÃ BỎ** (v2.6.0). Trước đây weather phơi thêm 2 mảng
+  > `forecast_daily`/`forecast_hourly` (kèm icon KTTV, `_unrecorded_attributes`) để nuôi
+  > `www/nchmf-weather-card.js` — card bị gỡ (hiển thị xấu) nên 2 mảng + helper `_forecast_attr`
+  > đã xoá; forecast giờ chỉ qua service chuẩn `async_forecast_*`. `wind_speed_ms`/`icon_url`/`cloud`
+  > GIỮ lại (nhẹ, dùng cho template/card mặc định).
 - Sensor Nhiệt độ (°C, temperature) — current.temp
 - Sensor Độ ẩm (%, humidity)
 - Sensor Gió (m/s, wind_speed; attr `wind_dir`, `wind_bearing`)
@@ -286,6 +290,14 @@ logger:
 
 ## 12. Phiên bản
 
+- **v2.6.0** — **Bỏ custom card + 3 fix nhỏ**. (1) Gỡ hẳn ý tưởng `www/nchmf-weather-card.js`
+  (hiển thị xấu, chưa từng commit) → xoá 2 attr nặng `forecast_daily`/`forecast_hourly` +
+  helper `_forecast_attr` + `_unrecorded_attributes` khỏi `weather.py` (forecast vẫn qua service
+  chuẩn `async_forecast_*`); GIỮ `wind_speed_ms`/`icon_url`/`cloud`/`warning` (nhẹ, dùng được).
+  (2) `map_condition`: guard `"mùa"` để `"mù"` không bắt nhầm (vd "chuyển mùa") ra fog.
+  (3) `async_forecast_hourly`: bỏ điểm giờ ĐÃ QUA (`_future_only`, fallback giữ nguyên nếu lọc
+  hết cuối ngày → card không quay vòng). (4) Sensor **Lượng mưa**: `state_class` MEASUREMENT →
+  TOTAL (đúng ngữ nghĩa lượng mưa tích luỹ cho long-term statistics).
 - **v2.5.0** — **Thêm 5 sensor** để phơi toàn bộ dữ liệu 'hiện tại' ra entity riêng (không
   chỉ trong custom card): **Lượng mưa** (device_class precipitation), **Lượng mây** (Cloud×100 %),
   **Hướng gió** (nhãn VN + attr độ), **Điều kiện** (mô tả VN + attr mã HA/icon KTTV), và

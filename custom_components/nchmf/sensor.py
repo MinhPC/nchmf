@@ -52,8 +52,8 @@ class _Base(CoordinatorEntity, SensorEntity):
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
             "name": entry.title,
-            "manufacturer": "KTTV / NCHMF",
-            "model": "khituongvietnam.gov.vn API",
+            "manufacturer": "Minh Phan",
+            "model": "Vietnam Weather",
         }
 
     @property
@@ -133,7 +133,9 @@ class NchmfPrecip(_Base):
     """Lượng mưa (mm) — quan trắc (Rainfall) nếu có, else forecast (Prec)."""
 
     _attr_device_class = SensorDeviceClass.PRECIPITATION
-    _attr_state_class = SensorStateClass.MEASUREMENT
+    # Lượng mưa TÍCH LUỸ (mm), không phải giá trị tức thời -> TOTAL cho đúng ngữ
+    # nghĩa long-term statistics (device_class precipitation khuyến nghị TOTAL).
+    _attr_state_class = SensorStateClass.TOTAL
     _attr_native_unit_of_measurement = UnitOfPrecipitationDepth.MILLIMETERS
 
     def __init__(self, coordinator, entry: ConfigEntry) -> None:

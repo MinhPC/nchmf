@@ -41,8 +41,8 @@ class NchmfWarning(CoordinatorEntity, BinarySensorEntity):
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
             "name": entry.title,
-            "manufacturer": "KTTV / NCHMF",
-            "model": "khituongvietnam.gov.vn API",
+            "manufacturer": "Minh Phan",
+            "model": "Vietnam Weather",
         }
 
     @property
