@@ -225,4 +225,6 @@ class NchmfObsStation(_Base):
         return {
             "observation_time": self._current.get("obs_time"),
             "current_source": data.get("current_source"),
+            # Phường thật của điểm quan trắc (StationName), khác tên trạm gần nhất.
+            "observation_ward": self._current.get("obs_ward"),
         }

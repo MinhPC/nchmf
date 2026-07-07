@@ -57,7 +57,7 @@
         "name": "Wind direction"
       },
       "condition": {
-        "name": "Condition"
+        "name": "Weather"
       },
       "observation_station": {
         "name": "Observation station"

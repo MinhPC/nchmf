@@ -197,10 +197,16 @@ def parse_obs(payload) -> dict:
         "wind_dir": wdir,
         "wind_bearing": bearing,
         "precipitation": o.get("Rainfall"),
+        # Tầm nhìn xa (km) — API thường trả null cho điểm phường, khi có số thì
+        # nuôi native_visibility của weather entity. None -> weather về None (vô hại).
+        "visibility": o.get("Visibility"),
         "condition": map_condition(text) if text else None,
         "condition_text": text,
         "icon": (ICON_BASE + icon) if icon else None,
+        # Name = tên TRẠM gần nhất ("Hải Châu (Tp Đà Nẵng)"); StationName = PHƯỜNG
+        # thật của điểm quan trắc ("Phường Hòa Xuân") -> phơi cả hai.
         "obs_station": (o.get("Name") or "").strip(),
+        "obs_ward": (o.get("StationName") or "").strip() or None,
         "obs_time": o.get("TimeObservation"),
     }
 

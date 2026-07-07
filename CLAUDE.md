@@ -295,6 +295,18 @@ logger:
 
 ## 12. Phiên bản
 
+- **v2.9.0** — **Lấy nốt field còn sót của quan trắc**. Review đối chiếu API thật:
+  endpoint forecast đã lấy 100% field; endpoint quan trắc (`api/wetherlocal`) còn 3 field
+  chưa dùng. Thêm: (1) **`Visibility`** → `parse_obs["visibility"]` → weather
+  `native_visibility` (đơn vị km) + attr `visibility` (API thường trả `null` cho điểm phường
+  → merge bỏ field None, weather về None vô hại; khi có số thì hiện tầm nhìn xa). (2)
+  **`StationName`** = PHƯỜNG thật của điểm quan trắc ("Phường Hòa Xuân") — khác `Name` là
+  TRẠM gần nhất ("Hải Châu (Tp Đà Nẵng)") → `parse_obs["obs_ward"]`, phơi ra attr
+  `observation_ward` của weather + sensor Trạm quan trắc. `Sunrise`/`Sunset` bỏ qua (null +
+  trùng `sun.sun`); `ProvinceName`/`Province_ID` bỏ qua (trùng forecast). Chỉ mở rộng, không
+  đổi nguồn/entity. (3) **Đổi tên sensor điều kiện** "Điều kiện"→**"Thời tiết"** (en:
+  Condition→Weather) — giá trị là tình trạng thời tiết HIỆN TẠI (quan trắc), "Thời tiết" sát
+  nghĩa hơn. Chỉ đổi `translation_key` name (en/vi/strings), KHÔNG đổi entity_id/giá trị.
 - **v2.8.1** — **`today_points` đủ field cho card**. Thêm `humidity`, `wind_speed` (m/s thô),
   `wind_dir` (nhãn VN), `wind_bearing` (độ), `cloud` vào mỗi mốc của `today_points` (trước chỉ
   có temp/condition/pop/icon) → card "diễn biến hôm nay" hiện được độ ẩm/xác suất mưa/hướng+tốc

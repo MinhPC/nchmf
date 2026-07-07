@@ -7,7 +7,7 @@ from homeassistant.components.weather import (
     WeatherEntityFeature,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfSpeed, UnitOfTemperature
+from homeassistant.const import UnitOfLength, UnitOfSpeed, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -32,6 +32,7 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
     _attr_attribution = ATTRIBUTION
     _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_native_wind_speed_unit = UnitOfSpeed.METERS_PER_SECOND
+    _attr_native_visibility_unit = UnitOfLength.KILOMETERS
     # Daily (10 ngày) + Hourly (4 mốc 1/7/13/19h HÔM NAY). Spinner của tab Hourly
     # chỉ xảy ra khi forecast RỖNG -> async_forecast_hourly LUÔN trả đủ 4 mốc
     # (KHÔNG lọc mốc quá khứ) nên không bao giờ rỗng -> không quay vòng. (Lỗi cũ
@@ -85,6 +86,11 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
         return self._current.get("wind_bearing")
 
     @property
+    def native_visibility(self):
+        # Tầm nhìn xa (km) từ quan trắc; None khi API không có -> HA ẩn trường này.
+        return self._current.get("visibility")
+
+    @property
     def extra_state_attributes(self) -> dict:
         data = self.coordinator.data or {}
         cur = self._current
@@ -105,7 +111,10 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
             # Nguồn 'hiện tại': quan trắc thật (trạm gần nhất) hay dự báo.
             "current_source": data.get("current_source"),
             "observation_station": cur.get("obs_station"),
+            # Phường thật của điểm quan trắc (StationName), tách với tên trạm gần nhất.
+            "observation_ward": cur.get("obs_ward"),
             "observation_time": cur.get("obs_time"),
+            "visibility": cur.get("visibility"),
             # 4 mốc trong ngày (1/7/13/19h) của KTTV để card TỰ render diễn biến
             # hôm nay — KHÔNG đẩy vào tab Hourly của HA (tránh spinner khi mốc đã qua).
             "today_points": self._today_points(),
