@@ -19,6 +19,7 @@ from .const import (
     API_URL,
     CONF_LAT,
     CONF_LON,
+    CONF_NAME,
     CONF_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
@@ -101,6 +102,34 @@ class NchmfCoordinator(DataUpdateCoordinator):
                     "coords": f"{self._lat}, {self._lon}",
                 },
             )
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Chuyển entry bản cũ (v1, lưu CONF_URL scrape) sang v2 (lat/lon).
+
+    Không suy ra được toạ độ từ URL tỉnh cũ -> dùng toạ độ nhà HA làm mặc định;
+    người dùng dùng Reconfigure (bản đồ) để chỉnh đúng phường. Nhờ vậy sau khi
+    cập nhật code, entry cũ TỰ nạp được thay vì crash (thiếu CONF_LAT).
+    """
+    if entry.version >= 2:
+        return True
+
+    lat = round(float(hass.config.latitude), 5)
+    lon = round(float(hass.config.longitude), 5)
+    hass.config_entries.async_update_entry(
+        entry,
+        data={CONF_LAT: lat, CONF_LON: lon, CONF_NAME: entry.title},
+        unique_id=f"{lat},{lon}",
+        version=2,
+    )
+    _LOGGER.warning(
+        "Đã chuyển entry NCHMF '%s' sang toạ độ nhà HA (%s, %s) do đổi sang API "
+        "theo lat/lon. Dùng Reconfigure (bản đồ) để chọn đúng phường.",
+        entry.title,
+        lat,
+        lon,
+    )
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
