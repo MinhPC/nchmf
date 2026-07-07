@@ -35,6 +35,8 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
     _attr_supported_features = (
         WeatherEntityFeature.FORECAST_DAILY | WeatherEntityFeature.FORECAST_HOURLY
     )
+    # Mảng forecast (kèm icon KTTV) cho custom card -> đừng ghi recorder mỗi lần.
+    _unrecorded_attributes = frozenset({"forecast_daily", "forecast_hourly"})
 
     def __init__(self, coordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
@@ -89,12 +91,38 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
             "wind_dir": cur.get("wind_dir"),
             "precipitation_probability": cur.get("pop"),
             "precipitation": cur.get("precipitation"),
+            "cloud": cur.get("cloud"),
+            "icon_url": cur.get("icon"),  # icon thật của KTTV cho hiện tại
+            "warning": cur.get("warning"),  # cảnh báo (Weather_War), None nếu không có
             "update_time": data.get("update_time"),
             # Nguồn 'hiện tại': quan trắc thật (trạm gần nhất) hay dự báo.
             "current_source": data.get("current_source"),
             "observation_station": cur.get("obs_station"),
             "observation_time": cur.get("obs_time"),
+            # Mảng forecast kèm icon KTTV + PoP/độ ẩm/gió cho custom card.
+            "forecast_daily": self._forecast_attr("daily"),
+            "forecast_hourly": self._forecast_attr("hourly"),
         }
+
+    def _forecast_attr(self, key: str) -> list[dict]:
+        """Mảng forecast rút gọn (kèm icon KTTV) để dựng card giống trang chủ."""
+        out: list[dict] = []
+        for d in (self.coordinator.data or {}).get(key, []):
+            out.append(
+                {
+                    "datetime": d.get("datetime"),
+                    "temperature": d.get("temperature", d.get("temp")),
+                    "templow": d.get("templow"),
+                    "condition": d.get("condition"),
+                    "condition_text": d.get("condition_text"),
+                    "precipitation_probability": d.get("pop"),
+                    "humidity": d.get("humidity"),
+                    "wind_speed": d.get("wind_speed"),
+                    "wind_dir": d.get("wind_dir"),
+                    "icon": d.get("icon"),
+                }
+            )
+        return out
 
     def _forecast(self, key: str) -> list[Forecast]:
         out: list[Forecast] = []

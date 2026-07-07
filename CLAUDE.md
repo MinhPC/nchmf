@@ -166,7 +166,9 @@ entity_id do HA sinh từ tên device (entry.title = tên phường) + tên enti
   Forecast có `native_temperature/templow, humidity, native_wind_speed, wind_bearing,
   precipitation_probability, native_precipitation`. `native_wind_bearing` = Direction (độ).
   Attr phụ: `location, province, condition_text, wind_dir, precipitation_probability,
-  precipitation, update_time`.
+  precipitation, cloud, icon_url (icon KTTV hiện tại), warning, update_time, current_source,
+  observation_station/time`, và `forecast_daily`/`forecast_hourly` (mảng KÈM icon KTTV cho
+  custom card — unrecorded).
   Card: `type: weather-forecast`, `forecast_type: daily` hoặc `hourly`.
 - Sensor Nhiệt độ (°C, temperature) — current.temp
 - Sensor Độ ẩm (%, humidity)
@@ -274,6 +276,10 @@ logger:
 
 ## 12. Phiên bản
 
+- **v2.3.0** — **Phơi thêm dữ liệu cho custom card**: weather attr thêm `cloud`, `icon_url`
+  (icon KTTV thật của hiện tại), `warning` (Weather_War), và `forecast_daily`/`forecast_hourly`
+  (mảng rút gọn KÈM icon KTTV + PoP/độ ẩm/gió — `_unrecorded_attributes`). parser thêm
+  `warning` vào mỗi record. Không đổi nguồn/entity, chỉ bổ sung attribute.
 - **v2.2.0** — **'Hiện tại' = QUAN TRẮC thật** (api/wetherlocal, trạm gần nhất) thay vì điểm
   dự báo 6-tiếng. Gọi forecast+obs song song, ghép current (obs đè, giữ pop). Sửa bug
   `map_condition`: "Mây thay đổi" -> partlycloudy (không còn "Nắng đẹp" sai). `wind_bearing_vn`

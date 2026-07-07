@@ -117,6 +117,7 @@ def transform(payload: dict) -> dict:
             "condition_text": text,
             "condition": map_condition(text),
             "icon": (ICON_BASE + icon) if icon else None,
+            "warning": (f.get("Weather_War") or "").strip() or None,
         }
         if hour == DAILY_HOUR:
             daily.append(
