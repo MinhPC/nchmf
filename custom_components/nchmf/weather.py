@@ -112,7 +112,10 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
         }
 
     def _today_points(self) -> list[dict]:
-        """4 mốc dự báo trong ngày (giờ 1/7/13/19) rút gọn cho card hiển thị."""
+        """4 mốc dự báo trong ngày (giờ 1/7/13/19) rút gọn cho card hiển thị.
+
+        Kèm đủ độ ẩm/gió/mưa/mây để card hiện diễn biến hôm nay chi tiết.
+        """
         out: list[dict] = []
         for h in (self.coordinator.data or {}).get("hourly", []):
             out.append(
@@ -122,8 +125,13 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
                     "temp": h.get("temp"),
                     "condition": h.get("condition"),
                     "condition_text": h.get("condition_text"),
+                    "humidity": h.get("humidity"),
                     "pop": h.get("pop"),
                     "precipitation": h.get("precipitation"),
+                    "wind_speed": h.get("wind_speed"),  # m/s thô
+                    "wind_dir": h.get("wind_dir"),  # nhãn VN
+                    "wind_bearing": h.get("wind_bearing"),  # độ
+                    "cloud": h.get("cloud"),
                     "icon": h.get("icon"),
                 }
             )

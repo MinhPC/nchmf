@@ -295,6 +295,10 @@ logger:
 
 ## 12. Phiên bản
 
+- **v2.8.1** — **`today_points` đủ field cho card**. Thêm `humidity`, `wind_speed` (m/s thô),
+  `wind_dir` (nhãn VN), `wind_bearing` (độ), `cloud` vào mỗi mốc của `today_points` (trước chỉ
+  có temp/condition/pop/icon) → card "diễn biến hôm nay" hiện được độ ẩm/xác suất mưa/hướng+tốc
+  độ gió cho từng mốc 1/7/13/19h. Chỉ mở rộng attribute, không đổi gì khác.
 - **v2.8.0** — **Bật lại tab Hourly (4 mốc, không spinner) + attribute `today_points`**.
   Nhận ra spinner của tab Hourly chỉ do forecast RỖNG (lỗi 2.6.0/2.7.0: `_future_only` lọc hết
   mốc quá khứ cuối ngày → rỗng). Sửa: `async_forecast_hourly` **LUÔN trả đủ 4 mốc 1/7/13/19h**
