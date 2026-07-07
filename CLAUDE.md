@@ -276,6 +276,9 @@ logger:
 
 ## 12. Phiên bản
 
+- **v2.3.1** — thêm attr `wind_speed_ms` (tốc độ gió thô m/s cho hiện tại). HA quy đổi
+  `native_wind_speed` sang đơn vị hệ thống (thường km/h) ở attr `wind_speed` → dùng
+  `wind_speed_ms` trong custom card để khớp m/s như trang chủ. (Forecast arrays vốn đã là m/s thô.)
 - **v2.3.0** — **Phơi thêm dữ liệu cho custom card**: weather attr thêm `cloud`, `icon_url`
   (icon KTTV thật của hiện tại), `warning` (Weather_War), và `forecast_daily`/`forecast_hourly`
   (mảng rút gọn KÈM icon KTTV + PoP/độ ẩm/gió — `_unrecorded_attributes`). parser thêm

@@ -89,6 +89,9 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
             "province": data.get("province"),
             "condition_text": cur.get("condition_text"),
             "wind_dir": cur.get("wind_dir"),
+            # Tốc độ gió THÔ (m/s) — HA quy đổi native_wind_speed sang đơn vị hệ thống
+            # (thường km/h) ở attr wind_speed; attr này giữ m/s như nguồn/trang chủ.
+            "wind_speed_ms": cur.get("wind_speed"),
             "precipitation_probability": cur.get("pop"),
             "precipitation": cur.get("precipitation"),
             "cloud": cur.get("cloud"),
