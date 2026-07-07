@@ -3,23 +3,23 @@
     "step": {
       "user": {
         "title": "Vietnam Weather (NCHMF)",
-        "description": "Choose a province from the list, or paste an NCHMF page URL (from nchmf.gov.vn). The default is Da Nang.",
+        "description": "Pick a point on the map. The forecast is resolved to the nearest ward (phường) via the KTTV API. Defaults to your Home Assistant location.",
         "data": {
-          "url": "Province / NCHMF page URL",
+          "location": "Location",
           "name": "Name (optional)"
         }
       },
       "reconfigure": {
         "title": "Reconfigure NCHMF location",
-        "description": "Change the province/URL or the display name.",
+        "description": "Move the point on the map or change the display name.",
         "data": {
-          "url": "Province / NCHMF page URL",
+          "location": "Location",
           "name": "Name (optional)"
         }
       }
     },
     "error": {
-      "cannot_connect": "Could not fetch or parse the page. Check the URL.",
+      "cannot_connect": "Could not reach the KTTV forecast API for that location.",
       "already_configured": "This location is already configured."
     },
     "abort": {
@@ -39,15 +39,15 @@
   },
   "entity": {
     "sensor": {
-      "past_temperatures": {
-        "name": "Temperature (past 10 days)"
+      "precipitation_probability": {
+        "name": "Precipitation probability"
       }
     }
   },
   "issues": {
     "no_data": {
-      "title": "NCHMF: no data parsed for {name}",
-      "description": "The integration fetched {url} but could not parse temperature or forecast. The NCHMF page layout may have changed. Check for an integration update, or report the issue."
+      "title": "NCHMF: no data for {name}",
+      "description": "The KTTV API responded for {coords} but returned no usable temperature or forecast. The API schema may have changed. Check for an integration update, or report the issue."
     }
   }
 }

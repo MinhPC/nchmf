@@ -3,27 +3,33 @@
 DOMAIN = "nchmf"
 
 # Config entry data keys
-CONF_URL = "url"
+CONF_LAT = "latitude"
+CONF_LON = "longitude"
 CONF_NAME = "name"
 
 # Options
 CONF_SCAN_INTERVAL = "scan_interval"
 
-# URL mặc định: Đà Nẵng (Hải Châu). Người dùng có thể chọn tỉnh khác trong
-# config flow (dropdown lấy từ INDEX_URL) hoặc dán URL thủ công.
-DEFAULT_URL = "https://www.nchmf.gov.vn/kttv/vi-VN/1/hai-chau-tp-da-nang-w55.html"
+# API JSON của Tổng cục Khí tượng Thuỷ văn (khituongvietnam.gov.vn).
+# Nhận lat/lon -> tự resolve về TRẠM/PHƯỜNG gần nhất, trả JSON sạch
+# (không còn scrape HTML nchmf.gov.vn). Cert hợp lệ -> verify SSL bình thường.
+API_URL = "https://khituongvietnam.gov.vn/WeatherApiService/api/forecast"
 
-# Trang liệt kê ~62 điểm/tỉnh -> dùng dựng dropdown chọn tỉnh.
-INDEX_URL = "https://www.nchmf.gov.vn/kttv/vi-VN/1/index.html"
+# Toạ độ mặc định (Phường Hoà Xuân, TP Đà Nẵng) nếu không lấy được toạ độ nhà HA.
+DEFAULT_LAT = 15.995433
+DEFAULT_LON = 108.21152
 
-ATTRIBUTION = "Dữ liệu từ Trung tâm Dự báo KTTV quốc gia (nchmf.gov.vn)"
+# Trường Icon trong API là đường dẫn tương đối -> prefix này thành URL đầy đủ.
+ICON_BASE = "https://kttv.gov.vn/"
+
+ATTRIBUTION = "Dữ liệu từ Tổng cục Khí tượng Thuỷ văn (khituongvietnam.gov.vn)"
 
 # Chu kỳ cập nhật (phút): mặc định + giới hạn cho options flow.
 DEFAULT_SCAN_INTERVAL_MINUTES = 30
 MIN_SCAN_INTERVAL_MINUTES = 10
 MAX_SCAN_INTERVAL_MINUTES = 180
 
-# Repairs: id issue khi parse được nhưng thiếu dữ liệu lõi (site đổi layout).
+# Repairs: id issue khi gọi API OK nhưng thiếu dữ liệu lõi (API đổi schema).
 ISSUE_NO_DATA = "no_data"
 
 USER_AGENT = (

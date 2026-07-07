@@ -1,22 +1,26 @@
-"""Parse HTML thô của trang nchmf thành dữ liệu có cấu trúc.
+"""Chuyển JSON của WeatherApiService (khituongvietnam.gov.vn) -> dữ liệu có cấu trúc.
 
-Hàm parse_html chạy trong executor (đồng bộ, không đụng event loop).
+`transform` là hàm THUẦN (pure), không đụng event loop và không phụ thuộc HA
+ngoài `homeassistant.util.dt` -> test được ngoài Home Assistant (xem CLAUDE.md mục 9).
 """
 from __future__ import annotations
 
-import re
-from datetime import datetime
-
-from bs4 import BeautifulSoup
+from datetime import datetime, timedelta
 
 from homeassistant.util import dt as dt_util
 
+from .const import ICON_BASE
+
+# ForecastHour == 99 là bản ghi TỔNG HỢP THEO NGÀY (Tmax/Tmin);
+# các giá trị khác (1/7/13/19) là điểm dự báo TRONG NGÀY (T2m).
+DAILY_HOUR = 99
+
 
 def map_condition(text: str) -> str:
-    """Map mô tả tiếng Việt của nchmf -> mã điều kiện chuẩn của Home Assistant."""
+    """Map mô tả tiếng Việt (Weather_Text) -> mã điều kiện chuẩn của Home Assistant."""
     c = (text or "").lower()
     # "không mưa" = KHÔNG có mưa -> đừng để chuỗi con "mưa" kích hoạt nhánh rainy.
-    # (nchmf mô tả "Có mây, không mưa" -> phải ra cloudy/partlycloudy, không phải rainy)
+    # (API mô tả "Nhiều mây, không mưa" -> phải ra cloudy, không phải rainy)
     has_rain = "mưa" in c and "không mưa" not in c
     if has_rain and ("dông" in c or "dong" in c):
         return "lightning-rainy"
@@ -35,178 +39,93 @@ def map_condition(text: str) -> str:
     return "partlycloudy"
 
 
-# Hướng gió tiếng Việt -> độ (0-360, hướng gió THỔI TỪ, theo la bàn).
-# Xếp tổ hợp 2 chữ trước để "đông bắc" khớp trước "đông"/"bắc".
-_WIND_BEARINGS = [
-    ("đông bắc", 45),
-    ("đông nam", 135),
-    ("tây bắc", 315),
-    ("tây nam", 225),
-    ("bắc", 0),
-    ("đông", 90),
-    ("nam", 180),
-    ("tây", 270),
-]
+# 8 hướng la bàn tiếng Việt (từ Direction theo độ) để hiển thị.
+_DIRS = ["Bắc", "Đông bắc", "Đông", "Đông nam", "Nam", "Tây nam", "Tây", "Tây bắc"]
 
 
-def wind_bearing(text: str) -> int | None:
-    """Map 'Gió đông bắc' -> 45. None nếu không nhận ra hướng."""
-    c = (text or "").lower()
-    for name, deg in _WIND_BEARINGS:
-        if name in c:
-            return deg
-    return None
+def wind_direction(deg) -> str:
+    """Đổi Direction (độ) -> nhãn hướng tiếng Việt. '' nếu None."""
+    if deg is None:
+        return ""
+    return _DIRS[round(float(deg) / 45) % 8]
 
 
-_PROVINCE_HREF = re.compile(r"^(?:https://www\.nchmf\.gov\.vn)?/kttv/vi-VN/1/[a-z0-9-]+-w\d+\.html$")
+def _round_int(v):
+    """None-safe: làm tròn về int, giữ None nếu thiếu."""
+    return int(round(float(v))) if v is not None else None
 
 
-def parse_provinces(raw: bytes | str) -> dict[str, str]:
-    """Từ trang index nchmf -> {url tuyệt đối: tên tỉnh}. Rỗng nếu không có."""
-    html = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else raw
-    soup = BeautifulSoup(html, "html.parser")
-    out: dict[str, str] = {}
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        if not _PROVINCE_HREF.match(href):
-            continue
-        url = href if href.startswith("http") else "https://www.nchmf.gov.vn" + href
-        name = a.get_text(" ", strip=True)
-        if name and url not in out:
-            out[url] = name
-    return out
+def _iso_day(date_str: str | None) -> datetime | None:
+    """'2026-07-07T00:00:00' -> đầu ngày theo giờ địa phương."""
+    if not date_str:
+        return None
+    try:
+        d = datetime.fromisoformat(date_str)
+    except ValueError:
+        return None
+    return dt_util.start_of_local_day(d)
 
 
-def _int(text: str) -> int | None:
-    m = re.search(r"-?\d+", text or "")
-    return int(m.group()) if m else None
+def transform(payload: dict) -> dict:
+    """JSON API -> dict `coordinator.data` (xem CLAUDE.md mục 5)."""
+    station = payload.get("Station") or {}
+    forecasts = payload.get("Forecasts") or []
 
+    hourly: list[dict] = []
+    daily: list[dict] = []
+    for f in forecasts:
+        hour = f.get("ForecastHour")
+        text = f.get("Weather_Text") or ""
+        icon = f.get("Icon")
+        base_day = _iso_day(f.get("ForecastDate"))
+        common = {
+            "humidity": _round_int(f.get("RH")),
+            "wind_speed": f.get("Speed"),
+            "wind_bearing": f.get("Direction"),
+            "wind_dir": wind_direction(f.get("Direction")),
+            "pop": _round_int(f.get("PoP")),
+            "precipitation": f.get("Prec"),
+            "cloud": f.get("Cloud"),
+            "condition_text": text,
+            "condition": map_condition(text),
+            "icon": (ICON_BASE + icon) if icon else None,
+        }
+        if hour == DAILY_HOUR:
+            daily.append(
+                {
+                    "datetime": base_day.isoformat() if base_day else None,
+                    "temperature": _round_int(f.get("Tmax")),
+                    "templow": _round_int(f.get("Tmin")),
+                    **common,
+                }
+            )
+        else:
+            when = base_day + timedelta(hours=hour) if base_day and hour is not None else None
+            hourly.append(
+                {
+                    "datetime": when.isoformat() if when else None,
+                    "hour": hour,
+                    "temp": _round_int(f.get("T2m")),
+                    **common,
+                }
+            )
 
-def _wind_speed(text: str) -> float | None:
-    m = re.search(r"(\d+(?:[.,]\d+)?)\s*m/s", text or "")
-    return float(m.group(1).replace(",", ".")) if m else None
-
-
-def _parse_block(block) -> dict:
-    """Đọc một khối (hiện tại / hôm nay / đêm nay)."""
-    values: dict[str, str] = {}
-    for li in block.select("ul.list-info-wt li"):
-        label_el = li.select_one(".uk-width-1-4")
-        value_el = li.select_one(".uk-width-3-4")
-        if not label_el or not value_el:
-            continue
-        label = label_el.get_text(" ", strip=True)
-        value = value_el.get_text(" ", strip=True).lstrip(":").strip()
-        values[label] = value
-
-    time_el = block.select_one(".time-update")
-    update_time = ""
-    if time_el:
-        update_time = (
-            time_el.get_text(" ", strip=True).replace("Cập nhật:", "").strip()
-        )
-
-    cond_text = values.get("Thời tiết", "")
-    wind_raw = values.get("Hướng gió", "")
-    wind_dir = ""
-    dir_match = re.search(r"(Gió[^-]+?)\s*-", wind_raw)
-    if dir_match:
-        wind_dir = dir_match.group(1).strip()
+    daily.sort(key=lambda d: d["datetime"] or "")
+    hourly.sort(key=lambda h: h["hour"] if h["hour"] is not None else 0)
 
     return {
-        "temp": _int(values.get("Nhiệt độ", "")),
-        "humidity": _int(values.get("Độ ẩm", "")),
-        "wind_speed": _wind_speed(wind_raw),
-        "wind_dir": wind_dir,
-        "wind_bearing": wind_bearing(wind_dir or wind_raw),
-        "condition_text": cond_text,
-        "condition": map_condition(cond_text) if cond_text else None,
-        "update_time": update_time,
+        "location": station.get("Name") or "NCHMF",
+        "province": station.get("ProvinceName") or "",
+        "station_id": station.get("StationID"),
+        "lat": station.get("StationLat"),
+        "lon": station.get("StationLon"),
+        "hourly": hourly,
+        "daily": daily,
     }
 
 
-def parse_html(raw: bytes | str) -> dict:
-    """Trả về dict dữ liệu thời tiết đã cấu trúc hoá."""
-    if isinstance(raw, bytes):
-        html = raw.decode("utf-8", "replace")
-    else:
-        html = raw
-
-    soup = BeautifulSoup(html, "html.parser")
-
-    loc_el = soup.select_one(".tt-news")
-    location = loc_el.get_text(" ", strip=True) if loc_el else "NCHMF"
-
-    content = soup.select_one(".content-news")
-    if content is None:
-        raise ValueError("Không tìm thấy .content-news trong trang")
-
-    blocks = content.select(".text-weather-location")
-    parsed_blocks = [_parse_block(b) for b in blocks[:3]]
-    while len(parsed_blocks) < 3:
-        parsed_blocks.append({})
-
-    current, today, night = parsed_blocks[0], parsed_blocks[1], parsed_blocks[2]
-
-    # ---- Dự báo 10 ngày ----
-    # Tìm trên TOÀN soup, KHÔNG scope vào .content-news: trang không đóng thẻ
-    # chuẩn nên html.parser đẩy các .item-days-wt ra ngoài .content-news
-    # (scope vào content sẽ ra rỗng -> forecast trống -> card quay vòng mãi).
-    forecast: list[dict] = []
-    for item in soup.select(".item-days-wt"):
-        date_el = item.select_one(".date-wt")
-        hi_el = item.select_one(".large-temp")
-        lo_el = item.select_one(".small-temp")  # phần tử đầu = nhiệt độ thấp
-        text_el = item.select_one(".text-temp")
-        if not date_el or not hi_el:
-            continue
-
-        span = date_el.select_one("span")
-        date_str = span.get_text(strip=True) if span else ""
-        weekday = date_el.get_text(" ", strip=True)
-        if date_str:
-            weekday = weekday.replace(date_str, "").strip()
-
-        try:
-            d = datetime.strptime(date_str, "%d/%m/%Y")
-            iso = dt_util.start_of_local_day(d).isoformat()
-        except ValueError:
-            continue
-
-        cond_text = text_el.get_text(" ", strip=True) if text_el else ""
-        forecast.append(
-            {
-                "datetime": iso,
-                "weekday": weekday,
-                "date": date_str,
-                "temperature": _int(hi_el.get_text(strip=True)),
-                "templow": _int(lo_el.get_text(strip=True)) if lo_el else None,
-                "condition": map_condition(cond_text),
-                "condition_text": cond_text,
-            }
-        )
-
-    # ---- Mảng nhiệt độ 10 ngày qua (từ script Highcharts) ----
-    # Chọn MẢNG SỐ DÀI NHẤT trong các "data:[...]" (series nhiệt độ ~76 điểm),
-    # tránh vớ nhầm mảng số ngắn khác nếu trang có thêm chart.
-    past_temps: list[int] = []
-    for m in re.finditer(r"data:\s*\[([-\d,\s]+)\]", html):
-        nums = [int(x) for x in re.findall(r"-?\d+", m.group(1))]
-        if len(nums) > len(past_temps):
-            past_temps = nums
-    past_times: list[str] = []
-    for m in re.finditer(r"categories:\s*\[([^\]]+)\]", html):
-        ts = re.findall(r"'([^']+)'", m.group(1))
-        if len(ts) > len(past_times):
-            past_times = ts
-
-    return {
-        "location": location,
-        "update_time": current.get("update_time", ""),
-        "current": current,
-        "today": today,
-        "night": night,
-        "forecast": forecast,
-        "past_temps": past_temps,
-        "past_times": past_times,
-    }
+def pick_current(hourly: list[dict], now_hour: int) -> dict:
+    """Chọn điểm trong ngày gần giờ hiện tại nhất làm 'hiện tại'. {} nếu rỗng."""
+    if not hourly:
+        return {}
+    return min(hourly, key=lambda h: abs((h.get("hour") or 0) - now_hour))

@@ -6,6 +6,6 @@
   "documentation": "https://github.com/MinhPC/nchmf",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/MinhPC/nchmf/issues",
-  "requirements": ["beautifulsoup4"],
-  "version": "1.1.0"
+  "requirements": [],
+  "version": "2.0.0"
 }

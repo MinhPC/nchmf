@@ -3,23 +3,23 @@
     "step": {
       "user": {
         "title": "Thời tiết Việt Nam (NCHMF)",
-        "description": "Chọn tỉnh/thành trong danh sách, hoặc dán URL trang nchmf (từ nchmf.gov.vn). Mặc định là Đà Nẵng.",
+        "description": "Chọn một điểm trên bản đồ. Dự báo sẽ được lấy theo phường gần nhất qua API KTTV. Mặc định là vị trí nhà của Home Assistant.",
         "data": {
-          "url": "Tỉnh/thành / URL trang nchmf",
+          "location": "Vị trí",
           "name": "Tên (tuỳ chọn)"
         }
       },
       "reconfigure": {
         "title": "Cấu hình lại địa điểm NCHMF",
-        "description": "Đổi tỉnh/URL hoặc tên hiển thị.",
+        "description": "Di chuyển điểm trên bản đồ hoặc đổi tên hiển thị.",
         "data": {
-          "url": "Tỉnh/thành / URL trang nchmf",
+          "location": "Vị trí",
           "name": "Tên (tuỳ chọn)"
         }
       }
     },
     "error": {
-      "cannot_connect": "Không tải/phân tích được trang. Kiểm tra lại URL.",
+      "cannot_connect": "Không gọi được API dự báo KTTV cho vị trí này.",
       "already_configured": "Địa điểm này đã được cấu hình."
     },
     "abort": {
@@ -39,15 +39,15 @@
   },
   "entity": {
     "sensor": {
-      "past_temperatures": {
-        "name": "Nhiệt độ 10 ngày qua"
+      "precipitation_probability": {
+        "name": "Xác suất mưa"
       }
     }
   },
   "issues": {
     "no_data": {
-      "title": "NCHMF: không lấy được dữ liệu cho {name}",
-      "description": "Đã tải {url} nhưng không phân tích được nhiệt độ/dự báo. Có thể trang nchmf đã đổi giao diện. Hãy kiểm tra bản cập nhật integration hoặc báo lỗi."
+      "title": "NCHMF: không có dữ liệu cho {name}",
+      "description": "API KTTV đã phản hồi cho {coords} nhưng không có nhiệt độ/dự báo dùng được. Có thể API đã đổi cấu trúc. Hãy kiểm tra bản cập nhật integration hoặc báo lỗi."
     }
   }
 }

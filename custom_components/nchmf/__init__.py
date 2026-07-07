@@ -1,4 +1,4 @@
-"""NCHMF weather integration (config entry, chọn địa điểm qua UI)."""
+"""NCHMF weather integration (config entry, chọn địa điểm theo lat/lon qua UI)."""
 from __future__ import annotations
 
 import asyncio
@@ -13,35 +13,40 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
 )
+from homeassistant.util import dt as dt_util
 
 from .const import (
+    API_URL,
+    CONF_LAT,
+    CONF_LON,
     CONF_SCAN_INTERVAL,
-    CONF_URL,
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
     ISSUE_NO_DATA,
     USER_AGENT,
 )
-from .parser import parse_html
+from .parser import pick_current, transform
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["weather", "sensor"]
 
 
-async def async_fetch_raw(hass: HomeAssistant, url: str) -> bytes:
-    """Tải HTML thô của trang nchmf (cert hợp lệ nên verify SSL bình thường)."""
+async def async_fetch_json(hass: HomeAssistant, lat, lon) -> dict:
+    """Gọi API dự báo theo lat/lon (cert hợp lệ -> verify SSL bình thường)."""
     session = async_get_clientsession(hass)
     async with asyncio.timeout(30):
         async with session.get(
-            url, headers={"User-Agent": USER_AGENT}
+            API_URL,
+            params={"lat": lat, "lon": lon},
+            headers={"User-Agent": USER_AGENT},
         ) as resp:
             resp.raise_for_status()
-            return await resp.read()
+            return await resp.json()
 
 
 class NchmfCoordinator(DataUpdateCoordinator):
-    """Fetch + parse trang nchmf, chia sẻ cho weather và sensor."""
+    """Gọi + chuẩn hoá JSON API, chia sẻ cho weather và sensor."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         minutes = entry.options.get(
@@ -54,28 +59,32 @@ class NchmfCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(minutes=minutes),
             config_entry=entry,
         )
-        self._url = entry.data[CONF_URL]
+        self._lat = entry.data[CONF_LAT]
+        self._lon = entry.data[CONF_LON]
 
     async def _async_update_data(self) -> dict:
         try:
-            raw = await async_fetch_raw(self.hass, self._url)
+            payload = await async_fetch_json(self.hass, self._lat, self._lon)
         except Exception as err:  # noqa: BLE001
-            raise UpdateFailed(f"Lỗi tải trang nchmf: {err}") from err
+            raise UpdateFailed(f"Lỗi gọi API KTTV: {err}") from err
 
         try:
-            data = await self.hass.async_add_executor_job(parse_html, raw)
+            data = transform(payload)
         except Exception as err:  # noqa: BLE001
-            raise UpdateFailed(f"Lỗi phân tích trang nchmf: {err}") from err
+            raise UpdateFailed(f"Lỗi chuẩn hoá JSON KTTV: {err}") from err
 
+        # 'current' = điểm trong ngày gần giờ hiện tại nhất (cần giờ địa phương).
+        data["current"] = pick_current(data["hourly"], dt_util.now().hour)
+        data["update_time"] = data["current"].get("datetime")
         self._check_health(data)
         return data
 
     def _check_health(self, data: dict) -> None:
-        """Tạo/xoá repair issue: parse OK nhưng thiếu dữ liệu lõi = site đổi layout."""
+        """Tạo/xoá repair issue: gọi OK nhưng thiếu dữ liệu lõi = API đổi schema."""
         issue_id = f"{ISSUE_NO_DATA}_{self.config_entry.entry_id}"
         healthy = (
-            data.get("current", {}).get("temp") is not None
-            or bool(data.get("forecast"))
+            bool(data.get("daily"))
+            or data.get("current", {}).get("temp") is not None
         )
         if healthy:
             ir.async_delete_issue(self.hass, DOMAIN, issue_id)
@@ -89,7 +98,7 @@ class NchmfCoordinator(DataUpdateCoordinator):
                 translation_key=ISSUE_NO_DATA,
                 translation_placeholders={
                     "name": self.config_entry.title,
-                    "url": self._url,
+                    "coords": f"{self._lat}, {self._lon}",
                 },
             )
 
@@ -115,5 +124,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload khi entry đổi (ví dụ đổi tên)."""
+    """Reload khi entry đổi (ví dụ đổi tên / toạ độ / scan interval)."""
     await hass.config_entries.async_reload(entry.entry_id)

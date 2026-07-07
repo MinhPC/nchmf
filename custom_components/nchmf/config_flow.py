@@ -1,4 +1,4 @@
-"""Config flow cho NCHMF: chọn tỉnh (dropdown) hoặc dán URL, tự kiểm tra."""
+"""Config flow cho NCHMF: chọn địa điểm trên bản đồ (lat/lon), tự kiểm tra API."""
 from __future__ import annotations
 
 import logging
@@ -12,84 +12,64 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlow,
 )
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.selector import (
+    LocationSelector,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
-    SelectOptionDict,
-    SelectSelector,
-    SelectSelectorConfig,
-    SelectSelectorMode,
 )
 
-from . import async_fetch_raw
+from . import async_fetch_json
 from .const import (
+    CONF_LAT,
+    CONF_LON,
     CONF_NAME,
     CONF_SCAN_INTERVAL,
-    CONF_URL,
     DEFAULT_SCAN_INTERVAL_MINUTES,
-    DEFAULT_URL,
     DOMAIN,
-    INDEX_URL,
     MAX_SCAN_INTERVAL_MINUTES,
     MIN_SCAN_INTERVAL_MINUTES,
 )
-from .parser import parse_html, parse_provinces
+from .parser import transform
 
 _LOGGER = logging.getLogger(__name__)
 
+CONF_LOCATION = "location"
 
-async def _validate(hass, url: str) -> str:
-    """Fetch + parse URL. Trả về tên địa điểm. Raise nếu không hợp lệ."""
-    raw = await async_fetch_raw(hass, url)
-    data = await hass.async_add_executor_job(parse_html, raw)
+
+async def _validate(hass: HomeAssistant, lat, lon) -> str:
+    """Gọi API tại lat/lon. Trả tên phường/trạm. Raise nếu không hợp lệ."""
+    payload = await async_fetch_json(hass, lat, lon)
+    data = transform(payload)
     return data.get("location") or "NCHMF"
 
 
-async def _fetch_provinces(hass) -> dict[str, str]:
-    """{url: tên tỉnh} từ trang index. Rỗng nếu tải/parse lỗi (sẽ fallback nhập URL)."""
-    try:
-        raw = await async_fetch_raw(hass, INDEX_URL)
-        return await hass.async_add_executor_job(parse_provinces, raw)
-    except Exception:  # noqa: BLE001
-        _LOGGER.warning("Không tải được danh sách tỉnh, dùng ô nhập URL")
-        return {}
-
-
-def _url_field(provinces: dict[str, str], default: str):
-    """Dropdown tỉnh (cho phép dán URL) nếu có danh sách, ngược lại ô text."""
-    if not provinces:
-        return str
-    options = [
-        SelectOptionDict(value=url, label=name)
-        for url, name in sorted(provinces.items(), key=lambda kv: kv[1])
-    ]
-    return SelectSelector(
-        SelectSelectorConfig(
-            options=options,
-            custom_value=True,  # vẫn cho phép dán URL tỉnh không có trong list
-            sort=True,
-            mode=SelectSelectorMode.DROPDOWN,
-        )
-    )
-
-
-def _schema(provinces, url_default=DEFAULT_URL, name_default=""):
+def _schema(hass: HomeAssistant, lat=None, lon=None, name_default=""):
+    """Bản đồ chọn toạ độ (mặc định nhà HA) + tên tuỳ chọn."""
+    lat = lat if lat is not None else hass.config.latitude
+    lon = lon if lon is not None else hass.config.longitude
     return vol.Schema(
         {
-            vol.Required(CONF_URL, default=url_default): _url_field(
-                provinces, url_default
-            ),
+            vol.Required(
+                CONF_LOCATION,
+                default={"latitude": lat, "longitude": lon},
+            ): LocationSelector(),
             vol.Optional(CONF_NAME, default=name_default): str,
         }
     )
 
 
+def _coords(user_input: dict) -> tuple[float, float]:
+    """Lấy (lat, lon) làm tròn 5 chữ số từ LocationSelector."""
+    loc = user_input[CONF_LOCATION]
+    return round(float(loc["latitude"]), 5), round(float(loc["longitude"]), 5)
+
+
 class NchmfConfigFlow(ConfigFlow, domain=DOMAIN):
     """Xử lý luồng thêm / cấu hình lại địa điểm qua UI."""
 
-    VERSION = 1
+    VERSION = 2
 
     @staticmethod
     @callback
@@ -102,59 +82,62 @@ class NchmfConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            url = user_input[CONF_URL].strip()
-            await self.async_set_unique_id(url)
+            lat, lon = _coords(user_input)
+            await self.async_set_unique_id(f"{lat},{lon}")
             self._abort_if_unique_id_configured()
             try:
-                location = await _validate(self.hass, url)
+                location = await _validate(self.hass, lat, lon)
             except Exception:  # noqa: BLE001
-                _LOGGER.exception("Không kiểm tra được URL nchmf: %s", url)
+                _LOGGER.exception("Không gọi được API KTTV: %s,%s", lat, lon)
                 errors["base"] = "cannot_connect"
             else:
                 title = user_input.get(CONF_NAME, "").strip() or location
                 return self.async_create_entry(
-                    title=title, data={CONF_URL: url, CONF_NAME: title}
+                    title=title,
+                    data={CONF_LAT: lat, CONF_LON: lon, CONF_NAME: title},
                 )
 
-        provinces = await _fetch_provinces(self.hass)
         return self.async_show_form(
-            step_id="user", data_schema=_schema(provinces), errors=errors
+            step_id="user", data_schema=_schema(self.hass), errors=errors
         )
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Đổi URL / tên của một entry đã có."""
+        """Đổi toạ độ / tên của một entry đã có."""
         entry = self._get_reconfigure_entry()
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            url = user_input[CONF_URL].strip()
+            lat, lon = _coords(user_input)
+            unique_id = f"{lat},{lon}"
             if any(
-                e.entry_id != entry.entry_id and e.data.get(CONF_URL) == url
+                e.entry_id != entry.entry_id and e.unique_id == unique_id
                 for e in self._async_current_entries()
             ):
                 errors["base"] = "already_configured"
             else:
                 try:
-                    location = await _validate(self.hass, url)
+                    location = await _validate(self.hass, lat, lon)
                 except Exception:  # noqa: BLE001
-                    _LOGGER.exception("Không kiểm tra được URL nchmf: %s", url)
+                    _LOGGER.exception("Không gọi được API KTTV: %s,%s", lat, lon)
                     errors["base"] = "cannot_connect"
                 else:
                     title = user_input.get(CONF_NAME, "").strip() or location
                     return self.async_update_reload_and_abort(
                         entry,
                         title=title,
-                        unique_id=url,
-                        data={CONF_URL: url, CONF_NAME: title},
+                        unique_id=unique_id,
+                        data={CONF_LAT: lat, CONF_LON: lon, CONF_NAME: title},
                     )
 
-        provinces = await _fetch_provinces(self.hass)
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=_schema(
-                provinces, entry.data[CONF_URL], entry.data.get(CONF_NAME, "")
+                self.hass,
+                entry.data.get(CONF_LAT),
+                entry.data.get(CONF_LON),
+                entry.data.get(CONF_NAME, ""),
             ),
             errors=errors,
         )

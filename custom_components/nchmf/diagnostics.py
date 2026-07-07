@@ -6,18 +6,19 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_URL, DOMAIN
+from .const import CONF_LAT, CONF_LON, DOMAIN
 
 
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> dict[str, Any]:
-    """Xuất trạng thái coordinator + dữ liệu đã parse để chẩn đoán."""
+    """Xuất trạng thái coordinator + dữ liệu đã chuẩn hoá để chẩn đoán."""
     coordinator = hass.data[DOMAIN][entry.entry_id]
     return {
         "entry": {
             "title": entry.title,
-            "url": entry.data.get(CONF_URL),
+            "latitude": entry.data.get(CONF_LAT),
+            "longitude": entry.data.get(CONF_LON),
             "options": dict(entry.options),
         },
         "last_update_success": coordinator.last_update_success,

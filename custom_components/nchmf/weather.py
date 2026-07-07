@@ -1,4 +1,4 @@
-"""Weather entity cho NCHMF."""
+"""Weather entity cho NCHMF (dữ liệu từ API KTTV theo lat/lon)."""
 from __future__ import annotations
 
 from homeassistant.components.weather import (
@@ -12,20 +12,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import ATTRIBUTION, CONF_URL, DOMAIN
-
-
-def _summary(block: dict | None) -> dict | None:
-    """Rút gọn khối hôm nay/đêm nay cho attribute (None nếu rỗng)."""
-    if not block:
-        return None
-    return {
-        "temperature": block.get("temp"),
-        "humidity": block.get("humidity"),
-        "wind_speed": block.get("wind_speed"),
-        "wind_dir": block.get("wind_dir"),
-        "condition_text": block.get("condition_text"),
-    }
+from .const import ATTRIBUTION, DOMAIN
 
 
 async def async_setup_entry(
@@ -38,14 +25,16 @@ async def async_setup_entry(
 
 
 class NchmfWeather(CoordinatorEntity, WeatherEntity):
-    """Weather entity dựng từ dữ liệu scrape."""
+    """Weather entity dựng từ JSON API KTTV."""
 
     _attr_has_entity_name = True
     _attr_name = None  # entity chính -> lấy tên theo device
     _attr_attribution = ATTRIBUTION
     _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_native_wind_speed_unit = UnitOfSpeed.METERS_PER_SECOND
-    _attr_supported_features = WeatherEntityFeature.FORECAST_DAILY
+    _attr_supported_features = (
+        WeatherEntityFeature.FORECAST_DAILY | WeatherEntityFeature.FORECAST_HOURLY
+    )
 
     def __init__(self, coordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
@@ -53,9 +42,8 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
             "name": entry.title,
-            "manufacturer": "NCHMF",
-            "model": "Web scrape",
-            "configuration_url": entry.data.get(CONF_URL),
+            "manufacturer": "KTTV / NCHMF",
+            "model": "khituongvietnam.gov.vn API",
         }
 
     @property
@@ -93,29 +81,42 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
     @property
     def extra_state_attributes(self) -> dict:
         data = self.coordinator.data or {}
+        cur = self._current
         return {
             "location": data.get("location"),
-            "condition_text": self._current.get("condition_text"),
-            "wind_dir": self._current.get("wind_dir"),
+            "province": data.get("province"),
+            "condition_text": cur.get("condition_text"),
+            "wind_dir": cur.get("wind_dir"),
+            "precipitation_probability": cur.get("pop"),
+            "precipitation": cur.get("precipitation"),
             "update_time": data.get("update_time"),
-            "today": _summary(data.get("today")),
-            "tonight": _summary(data.get("night")),
         }
 
-    async def async_forecast_daily(self) -> list[Forecast]:
+    def _forecast(self, key: str) -> list[Forecast]:
         out: list[Forecast] = []
-        for d in (self.coordinator.data or {}).get("forecast", []):
+        for d in (self.coordinator.data or {}).get(key, []):
             if not d.get("datetime"):
                 continue
             out.append(
                 Forecast(
                     datetime=d["datetime"],
                     condition=d.get("condition"),
-                    native_temperature=d.get("temperature"),
+                    native_temperature=d.get("temperature", d.get("temp")),
                     native_templow=d.get("templow"),
+                    humidity=d.get("humidity"),
+                    native_wind_speed=d.get("wind_speed"),
+                    wind_bearing=d.get("wind_bearing"),
+                    precipitation_probability=d.get("pop"),
+                    native_precipitation=d.get("precipitation"),
                 )
             )
         return out
+
+    async def async_forecast_daily(self) -> list[Forecast]:
+        return self._forecast("daily")
+
+    async def async_forecast_hourly(self) -> list[Forecast]:
+        return self._forecast("hourly")
 
     @callback
     def _handle_coordinator_update(self) -> None:

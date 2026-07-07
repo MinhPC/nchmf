@@ -1,4 +1,4 @@
-"""Sensor phụ trợ cho NCHMF: nhiệt độ, độ ẩm, gió hiện tại + mảng 10 ngày qua."""
+"""Sensor phụ trợ cho NCHMF: nhiệt độ, độ ẩm, gió, xác suất mưa (hiện tại)."""
 from __future__ import annotations
 
 from homeassistant.components.sensor import (
@@ -16,7 +16,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import ATTRIBUTION, CONF_URL, DOMAIN
+from .const import ATTRIBUTION, DOMAIN
 
 
 async def async_setup_entry(
@@ -30,7 +30,7 @@ async def async_setup_entry(
             NchmfTemp(coordinator, entry),
             NchmfHumidity(coordinator, entry),
             NchmfWind(coordinator, entry),
-            NchmfPastTemps(coordinator, entry),
+            NchmfPop(coordinator, entry),
         ]
     )
 
@@ -45,18 +45,13 @@ class _Base(CoordinatorEntity, SensorEntity):
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
             "name": entry.title,
-            "manufacturer": "NCHMF",
-            "model": "Web scrape",
-            "configuration_url": entry.data.get(CONF_URL),
+            "manufacturer": "KTTV / NCHMF",
+            "model": "khituongvietnam.gov.vn API",
         }
 
     @property
-    def _data(self) -> dict:
-        return self.coordinator.data or {}
-
-    @property
     def _current(self) -> dict:
-        return self._data.get("current", {}) or {}
+        return (self.coordinator.data or {}).get("current", {}) or {}
 
 
 # Nhiệt độ / độ ẩm / gió: KHÔNG đặt name -> HA lấy tên theo device_class (đã
@@ -107,27 +102,21 @@ class NchmfWind(_Base):
         }
 
 
-class NchmfPastTemps(_Base):
-    """Mảng nhiệt độ 10 ngày qua (mỗi 3h) để vẽ chart (apexcharts data_generator)."""
+class NchmfPop(_Base):
+    """Xác suất mưa (PoP) của điểm dự báo gần giờ hiện tại."""
 
-    _attr_icon = "mdi:chart-line"
-    _attr_translation_key = "past_temperatures"
-    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
-    _attr_device_class = SensorDeviceClass.TEMPERATURE
-    # Mảng ~77 phần tử -> đừng ghi vào recorder mỗi lần cập nhật.
-    _unrecorded_attributes = frozenset({"temperatures", "times"})
+    _attr_translation_key = "precipitation_probability"
+    _attr_icon = "mdi:weather-rainy"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = PERCENTAGE
 
     def __init__(self, coordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator, entry, "past_temps")
+        super().__init__(coordinator, entry, "pop")
 
     @property
     def native_value(self):
-        temps = self._data.get("past_temps", [])
-        return temps[-1] if temps else None
+        return self._current.get("pop")
 
     @property
     def extra_state_attributes(self) -> dict:
-        return {
-            "temperatures": self._data.get("past_temps", []),
-            "times": self._data.get("past_times", []),
-        }
+        return {"precipitation": self._current.get("precipitation")}
