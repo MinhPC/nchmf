@@ -16,10 +16,18 @@
           "location": "Vị trí",
           "name": "Tên (tuỳ chọn)"
         }
+      },
+      "station": {
+        "title": "Chọn trạm",
+        "description": "Các trạm/phường KTTV gần điểm bạn chọn nhất. Hãy chọn trạm bạn muốn.",
+        "data": {
+          "station": "Trạm (khoảng cách từ điểm của bạn)"
+        }
       }
     },
     "error": {
       "cannot_connect": "Không gọi được API dự báo KTTV cho vị trí này.",
+      "no_stations": "Không tìm thấy trạm nào gần điểm đó. Thử di chuyển điểm trên bản đồ.",
       "already_configured": "Địa điểm này đã được cấu hình."
     },
     "abort": {

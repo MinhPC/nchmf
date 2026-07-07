@@ -15,6 +15,12 @@ CONF_SCAN_INTERVAL = "scan_interval"
 # (không còn scrape HTML nchmf.gov.vn). Cert hợp lệ -> verify SSL bình thường.
 API_URL = "https://khituongvietnam.gov.vn/WeatherApiService/api/forecast"
 
+# Quan trắc THỜI GIAN THỰC (trạm gần nhất) theo lat/lon — dùng cho "hiện tại".
+# Trả JSON: Current_Temp, Humidity, Rainfall, Wind ("Gió <hướng> - tốc độ: N m/s"),
+# Weather_Text, Icon, Name (tên trạm), TimeObservation (giờ quan trắc).
+# (Chính trang chủ kttv.html gọi endpoint này cho popup "hiện tại".)
+OBS_URL = "https://khituongvietnam.gov.vn/WeatherApiService/api/wetherlocal"
+
 # Toạ độ mặc định (Phường Hoà Xuân, TP Đà Nẵng) nếu không lấy được toạ độ nhà HA.
 DEFAULT_LAT = 15.995433
 DEFAULT_LON = 108.21152

@@ -16,10 +16,18 @@
           "location": "Location",
           "name": "Name (optional)"
         }
+      },
+      "station": {
+        "title": "Choose a station",
+        "description": "Nearest KTTV ward stations to your point. Pick the one you want.",
+        "data": {
+          "station": "Station (distance from your point)"
+        }
       }
     },
     "error": {
       "cannot_connect": "Could not reach the KTTV forecast API for that location.",
+      "no_stations": "No stations found near that point. Try moving the map point.",
       "already_configured": "This location is already configured."
     },
     "abort": {

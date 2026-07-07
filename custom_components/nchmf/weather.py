@@ -90,6 +90,10 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
             "precipitation_probability": cur.get("pop"),
             "precipitation": cur.get("precipitation"),
             "update_time": data.get("update_time"),
+            # Nguồn 'hiện tại': quan trắc thật (trạm gần nhất) hay dự báo.
+            "current_source": data.get("current_source"),
+            "observation_station": cur.get("obs_station"),
+            "observation_time": cur.get("obs_time"),
         }
 
     def _forecast(self, key: str) -> list[Forecast]:

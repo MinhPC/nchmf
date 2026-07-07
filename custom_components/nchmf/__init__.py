@@ -24,9 +24,10 @@ from .const import (
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
     ISSUE_NO_DATA,
+    OBS_URL,
     USER_AGENT,
 )
-from .parser import pick_current, transform
+from .parser import parse_obs, pick_current, rank_stations, sample_points, transform
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,6 +45,48 @@ async def async_fetch_json(hass: HomeAssistant, lat, lon) -> dict:
         ) as resp:
             resp.raise_for_status()
             return await resp.json()
+
+
+async def async_fetch_obs(hass: HomeAssistant, lat, lon):
+    """Gọi API quan trắc thời gian thực (trạm gần nhất). Param 'Lat'/'Lon' viết hoa."""
+    session = async_get_clientsession(hass)
+    async with asyncio.timeout(30):
+        async with session.get(
+            OBS_URL,
+            params={"Lat": lat, "Lon": lon},
+            headers={"User-Agent": USER_AGENT},
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+
+async def async_discover_stations(
+    hass: HomeAssistant, lat, lon, limit: int = 5
+) -> list[dict]:
+    """Dò các trạm/phường gần (lat, lon) để người dùng chọn trong config flow.
+
+    API chỉ trả trạm gần nhất mỗi lần gọi -> quét đồng thời tâm + 2 vòng quanh
+    tâm, khử trùng theo StationID, xếp theo khoảng cách. Trả tối đa `limit` trạm
+    dạng {id, name, province, lat, lon, distance_km}.
+    """
+    session = async_get_clientsession(hass)
+
+    async def _one(la, lo):
+        try:
+            async with asyncio.timeout(15):
+                async with session.get(
+                    API_URL,
+                    params={"lat": la, "lon": lo},
+                    headers={"User-Agent": USER_AGENT},
+                ) as resp:
+                    resp.raise_for_status()
+                    return (await resp.json()).get("Station")
+        except Exception:  # noqa: BLE001
+            return None
+
+    points = sample_points(lat, lon)
+    results = await asyncio.gather(*(_one(la, lo) for la, lo in points))
+    return rank_stations(lat, lon, [s for s in results if s], limit)
 
 
 class NchmfCoordinator(DataUpdateCoordinator):
@@ -64,18 +107,32 @@ class NchmfCoordinator(DataUpdateCoordinator):
         self._lon = entry.data[CONF_LON]
 
     async def _async_update_data(self) -> dict:
-        try:
-            payload = await async_fetch_json(self.hass, self._lat, self._lon)
-        except Exception as err:  # noqa: BLE001
-            raise UpdateFailed(f"Lỗi gọi API KTTV: {err}") from err
+        # Forecast (bắt buộc) + quan trắc thời gian thực (tuỳ chọn) gọi SONG SONG.
+        forecast_payload, obs_payload = await asyncio.gather(
+            async_fetch_json(self.hass, self._lat, self._lon),
+            async_fetch_obs(self.hass, self._lat, self._lon),
+            return_exceptions=True,
+        )
+
+        if isinstance(forecast_payload, Exception):
+            raise UpdateFailed(f"Lỗi gọi API KTTV: {forecast_payload}")
 
         try:
-            data = transform(payload)
+            data = transform(forecast_payload)
         except Exception as err:  # noqa: BLE001
             raise UpdateFailed(f"Lỗi chuẩn hoá JSON KTTV: {err}") from err
 
-        # 'current' = điểm trong ngày gần giờ hiện tại nhất (cần giờ địa phương).
-        data["current"] = pick_current(data["hourly"], dt_util.now().hour)
+        # 'current': ưu tiên QUAN TRẮC thật (trạm gần nhất); nếu thiếu -> dùng điểm
+        # dự báo gần giờ hiện tại. PoP/giờ luôn lấy từ forecast (quan trắc không có).
+        fc_current = pick_current(data["hourly"], dt_util.now().hour)
+        obs: dict = {}
+        if not isinstance(obs_payload, Exception):
+            try:
+                obs = parse_obs(obs_payload)
+            except Exception:  # noqa: BLE001
+                obs = {}
+        data["current"] = {**fc_current, **obs} if obs else fc_current
+        data["current_source"] = "observation" if obs else "forecast"
         data["update_time"] = data["current"].get("datetime")
         self._check_health(data)
         return data

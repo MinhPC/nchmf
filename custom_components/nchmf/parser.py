@@ -5,6 +5,8 @@ ngoài `homeassistant.util.dt` -> test được ngoài Home Assistant (xem CLAUD
 """
 from __future__ import annotations
 
+import math
+import re
 from datetime import datetime, timedelta
 
 from homeassistant.util import dt as dt_util
@@ -30,7 +32,13 @@ def map_condition(text: str) -> str:
         return "fog"
     if "nhiều mây" in c:
         return "cloudy"
+    # "Mây thay đổi" = mây biến động, nắng ngắt quãng -> partlycloudy, KHÔNG phải
+    # sunny (dù có chữ "nắng" đứng sau) -> phải xét trước nhánh "nắng".
+    if "thay đổi" in c or "mây rải rác" in c:
+        return "partlycloudy"
     if "ít mây" in c:
+        return "sunny"
+    if "quang" in c:  # "trời quang"
         return "sunny"
     if "nắng" in c:
         return "sunny"
@@ -48,6 +56,26 @@ def wind_direction(deg) -> str:
     if deg is None:
         return ""
     return _DIRS[round(float(deg) / 45) % 8]
+
+
+# Hướng gió TIẾNG VIỆT -> độ (la bàn 16 hướng), cho chuỗi Wind của quan trắc
+# ("Gió nam đông nam - tốc độ: 1 m/s"). Xếp cụm 3 chữ trước 2 chữ trước 1 chữ.
+_WIND_BEARINGS_VN = [
+    ("bắc đông bắc", 22), ("đông đông bắc", 67), ("đông đông nam", 112),
+    ("nam đông nam", 157), ("nam tây nam", 202), ("tây tây nam", 247),
+    ("tây tây bắc", 292), ("bắc tây bắc", 337),
+    ("đông bắc", 45), ("đông nam", 135), ("tây nam", 225), ("tây bắc", 315),
+    ("bắc", 0), ("đông", 90), ("nam", 180), ("tây", 270),
+]
+
+
+def wind_bearing_vn(label: str):
+    """'nam đông nam' -> 157. None nếu không nhận ra."""
+    c = (label or "").lower()
+    for phrase, deg in _WIND_BEARINGS_VN:
+        if phrase in c:
+            return deg
+    return None
 
 
 def _round_int(v):
@@ -114,8 +142,8 @@ def transform(payload: dict) -> dict:
     hourly.sort(key=lambda h: h["hour"] if h["hour"] is not None else 0)
 
     return {
-        "location": station.get("Name") or "NCHMF",
-        "province": station.get("ProvinceName") or "",
+        "location": (station.get("Name") or "").strip() or "NCHMF",
+        "province": (station.get("ProvinceName") or "").strip(),
         "station_id": station.get("StationID"),
         "lat": station.get("StationLat"),
         "lon": station.get("StationLon"),
@@ -129,3 +157,97 @@ def pick_current(hourly: list[dict], now_hour: int) -> dict:
     if not hourly:
         return {}
     return min(hourly, key=lambda h: abs((h.get("hour") or 0) - now_hour))
+
+
+def _wind_from_text(text: str):
+    """'Gió nam đông nam - tốc độ: 1 m/s' -> (speed:float|None, dir_label, bearing)."""
+    speed = None
+    m = re.search(r"tốc\s*độ\s*:?\s*([\d.,]+)\s*m/s", text or "")
+    if m:
+        speed = float(m.group(1).replace(",", "."))
+    dir_label = ""
+    dm = re.search(r"[Gg]ió\s+(.+?)\s*-\s*tốc", text or "")
+    if dm:
+        dir_label = dm.group(1).strip()
+    return speed, dir_label, wind_bearing_vn(dir_label)
+
+
+def parse_obs(payload) -> dict:
+    """JSON quan trắc thời gian thực (api/wetherlocal) -> dict 'current'.
+
+    Trả {} nếu thiếu nhiệt độ (coi như không có quan trắc -> fallback forecast).
+    Khoá khớp với điểm hourly để merge đè lên forecast.
+    """
+    o = payload[0] if isinstance(payload, list) and payload else payload
+    if not isinstance(o, dict):
+        return {}
+    temp = o.get("Current_Temp")
+    if temp is None:
+        return {}
+    text = o.get("Weather_Text") or ""
+    speed, wdir, bearing = _wind_from_text(o.get("Wind") or "")
+    icon = o.get("Icon")
+    return {
+        "temp": _round_int(temp),
+        "humidity": _round_int(o.get("Humidity")),
+        "wind_speed": speed,
+        "wind_dir": wdir,
+        "wind_bearing": bearing,
+        "precipitation": o.get("Rainfall"),
+        "condition": map_condition(text) if text else None,
+        "condition_text": text,
+        "icon": (ICON_BASE + icon) if icon else None,
+        "obs_station": (o.get("Name") or "").strip(),
+        "obs_time": o.get("TimeObservation"),
+    }
+
+
+def haversine_km(lat1, lon1, lat2, lon2) -> float:
+    """Khoảng cách đường chim bay (km) giữa hai điểm lat/lon."""
+    r1, r2 = math.radians(lat1), math.radians(lat2)
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(r1) * math.cos(r2) * math.sin(dlon / 2) ** 2
+    return 6371.0 * 2 * math.asin(math.sqrt(a))
+
+
+def sample_points(lat: float, lon: float, rings=(2.0, 4.0)) -> list[tuple[float, float]]:
+    """Điểm tâm + các vòng (bán kính km) theo 8 hướng, để dò trạm lân cận.
+
+    API chỉ trả TRẠM GẦN NHẤT cho mỗi lat/lon, nên phải quét quanh tâm để lộ
+    các trạm phường kế bên (mỗi phường ~2km). Trả list (lat, lon).
+    """
+    pts = [(lat, lon)]
+    cos_lat = math.cos(math.radians(lat)) or 1e-9
+    for r_km in rings:
+        dlat = r_km / 111.0
+        dlon = r_km / (111.0 * cos_lat)
+        for ang in range(0, 360, 45):
+            a = math.radians(ang)
+            pts.append((lat + dlat * math.cos(a), lon + dlon * math.sin(a)))
+    return pts
+
+
+def rank_stations(lat: float, lon: float, stations: list[dict], limit: int = 5) -> list[dict]:
+    """Gom trạm theo StationID (khử trùng), xếp theo khoảng cách tới (lat, lon).
+
+    `stations` là list các dict Station thô từ API. Trả tối đa `limit` phần tử
+    dạng {id, name, province, lat, lon, distance_km} đã sắp gần→xa.
+    """
+    seen: dict[str, dict] = {}
+    for s in stations:
+        if not s:
+            continue
+        sid = s.get("StationID")
+        slat, slon = s.get("StationLat"), s.get("StationLon")
+        if sid is None or slat is None or slon is None or sid in seen:
+            continue
+        seen[sid] = {
+            "id": sid,
+            "name": (s.get("Name") or "").strip(),
+            "province": s.get("ProvinceName") or "",
+            "lat": round(float(slat), 5),
+            "lon": round(float(slon), 5),
+            "distance_km": round(haversine_km(lat, lon, float(slat), float(slon)), 1),
+        }
+    return sorted(seen.values(), key=lambda x: x["distance_km"])[:limit]

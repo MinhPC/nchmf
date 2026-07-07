@@ -1,4 +1,4 @@
-"""Config flow cho NCHMF: chọn địa điểm trên bản đồ (lat/lon), tự kiểm tra API."""
+"""Config flow cho NCHMF: chọn tâm trên bản đồ (mặc định nhà HA) -> chọn trạm gần."""
 from __future__ import annotations
 
 import logging
@@ -18,9 +18,13 @@ from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
+    SelectOptionDict,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
 )
 
-from . import async_fetch_json
+from . import async_discover_stations
 from .const import (
     CONF_LAT,
     CONF_LON,
@@ -31,22 +35,15 @@ from .const import (
     MAX_SCAN_INTERVAL_MINUTES,
     MIN_SCAN_INTERVAL_MINUTES,
 )
-from .parser import transform
 
 _LOGGER = logging.getLogger(__name__)
 
 CONF_LOCATION = "location"
+CONF_STATION = "station"
 
 
-async def _validate(hass: HomeAssistant, lat, lon) -> str:
-    """Gọi API tại lat/lon. Trả tên phường/trạm. Raise nếu không hợp lệ."""
-    payload = await async_fetch_json(hass, lat, lon)
-    data = transform(payload)
-    return data.get("location") or "NCHMF"
-
-
-def _schema(hass: HomeAssistant, lat=None, lon=None, name_default=""):
-    """Bản đồ chọn toạ độ (mặc định nhà HA) + tên tuỳ chọn."""
+def _center_schema(hass: HomeAssistant, lat=None, lon=None, name_default=""):
+    """Bước 1: bản đồ chọn tâm (mặc định nhà HA) + tên tuỳ chọn."""
     lat = lat if lat is not None else hass.config.latitude
     lon = lon if lon is not None else hass.config.longitude
     return vol.Schema(
@@ -60,16 +57,38 @@ def _schema(hass: HomeAssistant, lat=None, lon=None, name_default=""):
     )
 
 
-def _coords(user_input: dict) -> tuple[float, float]:
-    """Lấy (lat, lon) làm tròn 5 chữ số từ LocationSelector."""
-    loc = user_input[CONF_LOCATION]
-    return round(float(loc["latitude"]), 5), round(float(loc["longitude"]), 5)
+def _station_schema(stations: list[dict], default: str | None = None):
+    """Bước 2: dropdown các trạm gần nhất (value = 'lat,lon')."""
+    options = [
+        SelectOptionDict(
+            value=f"{s['lat']},{s['lon']}",
+            label=f"{s['name']} ({s['distance_km']} km)",
+        )
+        for s in stations
+    ]
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_STATION,
+                default=default or options[0]["value"],
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=options, mode=SelectSelectorMode.LIST
+                )
+            )
+        }
+    )
 
 
 class NchmfConfigFlow(ConfigFlow, domain=DOMAIN):
     """Xử lý luồng thêm / cấu hình lại địa điểm qua UI."""
 
     VERSION = 2
+
+    def __init__(self) -> None:
+        self._name: str = ""
+        self._stations: list[dict] = []
+        self._reconfigure_entry: ConfigEntry | None = None
 
     @staticmethod
     @callback
@@ -79,67 +98,79 @@ class NchmfConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            lat, lon = _coords(user_input)
-            await self.async_set_unique_id(f"{lat},{lon}")
-            self._abort_if_unique_id_configured()
-            try:
-                location = await _validate(self.hass, lat, lon)
-            except Exception:  # noqa: BLE001
-                _LOGGER.exception("Không gọi được API KTTV: %s,%s", lat, lon)
-                errors["base"] = "cannot_connect"
-            else:
-                title = user_input.get(CONF_NAME, "").strip() or location
-                return self.async_create_entry(
-                    title=title,
-                    data={CONF_LAT: lat, CONF_LON: lon, CONF_NAME: title},
-                )
-
-        return self.async_show_form(
-            step_id="user", data_schema=_schema(self.hass), errors=errors
-        )
+        return await self._async_center_step("user", user_input)
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Đổi toạ độ / tên của một entry đã có."""
-        entry = self._get_reconfigure_entry()
+        self._reconfigure_entry = self._get_reconfigure_entry()
+        return await self._async_center_step("reconfigure", user_input)
+
+    async def _async_center_step(
+        self, step_id: str, user_input: dict[str, Any] | None
+    ) -> ConfigFlowResult:
+        """Bước 1 (dùng chung user + reconfigure): chọn tâm rồi dò trạm gần."""
         errors: dict[str, str] = {}
+        entry = self._reconfigure_entry
 
         if user_input is not None:
-            lat, lon = _coords(user_input)
-            unique_id = f"{lat},{lon}"
-            if any(
-                e.entry_id != entry.entry_id and e.unique_id == unique_id
-                for e in self._async_current_entries()
-            ):
-                errors["base"] = "already_configured"
+            loc = user_input[CONF_LOCATION]
+            lat = round(float(loc["latitude"]), 5)
+            lon = round(float(loc["longitude"]), 5)
+            self._name = user_input.get(CONF_NAME, "").strip()
+            try:
+                self._stations = await async_discover_stations(self.hass, lat, lon)
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Không dò được trạm gần %s,%s", lat, lon)
+                errors["base"] = "cannot_connect"
             else:
-                try:
-                    location = await _validate(self.hass, lat, lon)
-                except Exception:  # noqa: BLE001
-                    _LOGGER.exception("Không gọi được API KTTV: %s,%s", lat, lon)
-                    errors["base"] = "cannot_connect"
+                if not self._stations:
+                    errors["base"] = "no_stations"
                 else:
-                    title = user_input.get(CONF_NAME, "").strip() or location
-                    return self.async_update_reload_and_abort(
-                        entry,
-                        title=title,
-                        unique_id=unique_id,
-                        data={CONF_LAT: lat, CONF_LON: lon, CONF_NAME: title},
-                    )
+                    return await self.async_step_station()
+
+        lat_def = entry.data.get(CONF_LAT) if entry else None
+        lon_def = entry.data.get(CONF_LON) if entry else None
+        name_def = entry.data.get(CONF_NAME, "") if entry else ""
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=_center_schema(self.hass, lat_def, lon_def, name_def),
+            errors=errors,
+        )
+
+    async def async_step_station(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Bước 2: chọn trạm gần nhất -> lưu toạ độ trạm."""
+        entry = self._reconfigure_entry
+
+        if user_input is not None:
+            lat_s, lon_s = user_input[CONF_STATION].split(",")
+            lat, lon = round(float(lat_s), 5), round(float(lon_s), 5)
+            station = next(
+                (s for s in self._stations if s["lat"] == lat and s["lon"] == lon),
+                None,
+            )
+            title = self._name or (station["name"] if station else "NCHMF")
+            unique_id = f"{lat},{lon}"
+            data = {CONF_LAT: lat, CONF_LON: lon, CONF_NAME: title}
+
+            if entry is not None:
+                if any(
+                    e.entry_id != entry.entry_id and e.unique_id == unique_id
+                    for e in self._async_current_entries()
+                ):
+                    return self.async_abort(reason="already_configured")
+                return self.async_update_reload_and_abort(
+                    entry, title=title, unique_id=unique_id, data=data
+                )
+
+            await self.async_set_unique_id(unique_id)
+            self._abort_if_unique_id_configured()
+            return self.async_create_entry(title=title, data=data)
 
         return self.async_show_form(
-            step_id="reconfigure",
-            data_schema=_schema(
-                self.hass,
-                entry.data.get(CONF_LAT),
-                entry.data.get(CONF_LON),
-                entry.data.get(CONF_NAME, ""),
-            ),
-            errors=errors,
+            step_id="station", data_schema=_station_schema(self._stations)
         )
 
 
