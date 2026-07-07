@@ -32,11 +32,15 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
     _attr_attribution = ATTRIBUTION
     _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_native_wind_speed_unit = UnitOfSpeed.METERS_PER_SECOND
-    # CHỈ daily: API KTTV chỉ có 4 điểm cố định (1/7/13/19h) của HÔM NAY, không
-    # phải dự báo theo giờ thật -> buổi chiều/tối các mốc đều quá khứ, tab Hourly
-    # trong more-info quay vòng mãi (frontend spinner khi forecast toàn giờ đã qua).
-    # Daily (10 ngày) mới đủ dữ liệu -> chỉ quảng bá FORECAST_DAILY.
-    _attr_supported_features = WeatherEntityFeature.FORECAST_DAILY
+    # Daily (10 ngày) + Hourly (4 mốc 1/7/13/19h HÔM NAY). Spinner của tab Hourly
+    # chỉ xảy ra khi forecast RỖNG -> async_forecast_hourly LUÔN trả đủ 4 mốc
+    # (KHÔNG lọc mốc quá khứ) nên không bao giờ rỗng -> không quay vòng. (Lỗi cũ
+    # ở 2.6.0 do _future_only lọc hết mốc cuối ngày -> rỗng -> spinner.)
+    _attr_supported_features = (
+        WeatherEntityFeature.FORECAST_DAILY | WeatherEntityFeature.FORECAST_HOURLY
+    )
+    # Mảng 4 mốc trong ngày (today_points) cho card tự render -> đừng ghi recorder.
+    _unrecorded_attributes = frozenset({"today_points"})
 
     def __init__(self, coordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
@@ -102,7 +106,28 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
             "current_source": data.get("current_source"),
             "observation_station": cur.get("obs_station"),
             "observation_time": cur.get("obs_time"),
+            # 4 mốc trong ngày (1/7/13/19h) của KTTV để card TỰ render diễn biến
+            # hôm nay — KHÔNG đẩy vào tab Hourly của HA (tránh spinner khi mốc đã qua).
+            "today_points": self._today_points(),
         }
+
+    def _today_points(self) -> list[dict]:
+        """4 mốc dự báo trong ngày (giờ 1/7/13/19) rút gọn cho card hiển thị."""
+        out: list[dict] = []
+        for h in (self.coordinator.data or {}).get("hourly", []):
+            out.append(
+                {
+                    "hour": h.get("hour"),
+                    "datetime": h.get("datetime"),
+                    "temp": h.get("temp"),
+                    "condition": h.get("condition"),
+                    "condition_text": h.get("condition_text"),
+                    "pop": h.get("pop"),
+                    "precipitation": h.get("precipitation"),
+                    "icon": h.get("icon"),
+                }
+            )
+        return out
 
     def _forecast(self, key: str) -> list[Forecast]:
         records = (self.coordinator.data or {}).get(key, [])
@@ -127,6 +152,11 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
 
     async def async_forecast_daily(self) -> list[Forecast]:
         return self._forecast("daily")
+
+    async def async_forecast_hourly(self) -> list[Forecast]:
+        # LUÔN trả đủ 4 mốc 1/7/13/19h (kể cả mốc đã qua) -> không bao giờ rỗng
+        # -> tab Hourly không quay vòng. KHÔNG lọc mốc quá khứ (đó là lỗi 2.6.0).
+        return self._forecast("hourly")
 
     @callback
     def _handle_coordinator_update(self) -> None:

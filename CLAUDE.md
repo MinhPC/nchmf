@@ -59,7 +59,7 @@ Người dùng chỉ cần **Reconfigure (bản đồ)** để chỉnh đúng ph
 | `__init__.py` | `async_setup_entry`/`async_unload_entry` + `async_migrate_entry` + `NchmfCoordinator` + `async_fetch_json` + `async_fetch_obs` (quan trắc) + `async_discover_stations` + `_check_health`. Gọi forecast+obs SONG SONG, ghép `current`. |
 | `config_flow.py` | 2 bước: `_async_center_step` (bản đồ, dùng chung user/reconfigure) → `async_step_station` (dropdown trạm gần) + `NchmfOptionsFlow` (scan interval). |
 | `parser.py` | `transform`, `map_condition`, `wind_direction(deg)`, `pick_current`, `parse_obs` (quan trắc), `wind_bearing_vn` + `haversine_km`/`sample_points`/`rank_stations`. **Hàm THUẦN, test ngoài HA.** |
-| `weather.py` | Weather entity — condition (+ `clear-night`) + current + forecast **daily** (CHỈ daily từ v2.7.0; nguồn không có hourly thật) + `native_wind_bearing` + device_info. |
+| `weather.py` | Weather entity — condition (+ `clear-night`) + current + forecast **daily & hourly** (hourly LUÔN trả đủ 4 mốc, không lọc → tab Hourly không rỗng/không spinner) + `today_points` + `native_wind_bearing` + device_info. |
 | `sensor.py` | 9 sensor: nhiệt độ/độ ẩm/gió/**lượng mưa** (tên theo device_class) + **xác suất mưa/mây/hướng gió/điều kiện** (`translation_key`) + **trạm quan trắc** (diagnostic). Chung device_info. |
 | `binary_sensor.py` | 1 binary_sensor **cảnh báo** (`warning`, device_class `safety`): on khi `current["warning"]` (Weather_War) khác rỗng. Chung device_info. |
 | `diagnostics.py` | `async_get_config_entry_diagnostics` — xuất coordinator.data + entry (lat/lon). |
@@ -164,14 +164,17 @@ pouring, rainy, snowy, snowy-rainy, sunny, windy, windy-variant, exceptional`.
 entity_id do HA sinh từ tên device (entry.title = tên phường) + tên entity. 1 device gom hết:
 
 - **Weather entity** — state = mã điều kiện (+ `clear-night` khi sunny & ban đêm theo `sun.sun`).
-  `FORECAST_DAILY` (chỉ daily, 10 ngày). KHÔNG quảng bá HOURLY: API chỉ có 4 điểm
-  cố định 1/7/13/19h của HÔM NAY (không phải hourly thật) → chiều/tối mốc đều quá
-  khứ, tab Hourly more-info quay vòng mãi. Dữ liệu `hourly` vẫn dùng nội bộ cho `current`.
+  `FORECAST_DAILY | FORECAST_HOURLY`: daily 10 ngày, hourly 4 mốc (1/7/13/19h HÔM NAY).
+  `async_forecast_hourly` LUÔN trả đủ 4 mốc (kể cả mốc đã qua, KHÔNG lọc) → forecast
+  không bao giờ rỗng → tab Hourly không quay vòng (spinner chỉ xảy ra khi forecast rỗng).
+  Lỗi 2.6.0/2.7.0: `_future_only` lọc hết mốc cuối ngày → rỗng → spinner (đã bỏ lọc ở 2.8.0).
   Forecast có `native_temperature/templow, humidity, native_wind_speed, wind_bearing,
   precipitation_probability, native_precipitation`. `native_wind_bearing` = Direction (độ).
   Attr phụ: `location, province, condition_text, wind_dir, wind_speed_ms, precipitation_probability,
   precipitation, cloud, icon_url (icon KTTV hiện tại), warning, update_time, current_source,
-  observation_station/time`.
+  observation_station/time`, và `today_points` (4 mốc 1/7/13/19h hôm nay: hour/temp/condition/
+  pop/icon — `_unrecorded_attributes`) để CARD tự render "diễn biến hôm nay" mà KHÔNG đẩy vào
+  tab Hourly của HA (tránh spinner khi mốc đã qua).
   Card: `type: weather-forecast`, `forecast_type: daily` hoặc `hourly`.
   > **Custom card ĐÃ BỎ** (v2.6.0). Trước đây weather phơi thêm 2 mảng
   > `forecast_daily`/`forecast_hourly` (kèm icon KTTV, `_unrecorded_attributes`) để nuôi
@@ -292,6 +295,13 @@ logger:
 
 ## 12. Phiên bản
 
+- **v2.8.0** — **Bật lại tab Hourly (4 mốc, không spinner) + attribute `today_points`**.
+  Nhận ra spinner của tab Hourly chỉ do forecast RỖNG (lỗi 2.6.0/2.7.0: `_future_only` lọc hết
+  mốc quá khứ cuối ngày → rỗng). Sửa: `async_forecast_hourly` **LUÔN trả đủ 4 mốc 1/7/13/19h**
+  (không lọc) → không bao giờ rỗng → tab Hourly hiển thị 4 cột, hết quay vòng. Bật lại
+  `FORECAST_HOURLY`. Thêm attribute nhẹ `today_points` (`_unrecorded_attributes`) để card TỰ
+  render "diễn biến hôm nay" (icon KTTV, đánh dấu mốc đã qua) — dùng song song với tab Hourly.
+  Vẫn thuần KTTV, không đổi nguồn.
 - **v2.7.0** — **Bỏ dự báo theo GIỜ (FORECAST_HOURLY)**. API KTTV chỉ trả 4 điểm cố định
   1/7/13/19h của HÔM NAY (không phải hourly thật) → chiều/tối mọi mốc đều quá khứ → tab
   Hourly trong more-info **quay vòng mãi** (frontend spinner khi forecast toàn giờ đã qua).
