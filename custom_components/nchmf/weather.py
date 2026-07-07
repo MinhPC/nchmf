@@ -11,7 +11,6 @@ from homeassistant.const import UnitOfSpeed, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import dt as dt_util
 
 from .const import ATTRIBUTION, DOMAIN
 
@@ -33,9 +32,11 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
     _attr_attribution = ATTRIBUTION
     _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_native_wind_speed_unit = UnitOfSpeed.METERS_PER_SECOND
-    _attr_supported_features = (
-        WeatherEntityFeature.FORECAST_DAILY | WeatherEntityFeature.FORECAST_HOURLY
-    )
+    # CHỈ daily: API KTTV chỉ có 4 điểm cố định (1/7/13/19h) của HÔM NAY, không
+    # phải dự báo theo giờ thật -> buổi chiều/tối các mốc đều quá khứ, tab Hourly
+    # trong more-info quay vòng mãi (frontend spinner khi forecast toàn giờ đã qua).
+    # Daily (10 ngày) mới đủ dữ liệu -> chỉ quảng bá FORECAST_DAILY.
+    _attr_supported_features = WeatherEntityFeature.FORECAST_DAILY
 
     def __init__(self, coordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
@@ -103,10 +104,8 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
             "observation_time": cur.get("obs_time"),
         }
 
-    def _forecast(self, key: str, drop_past: bool = False) -> list[Forecast]:
+    def _forecast(self, key: str) -> list[Forecast]:
         records = (self.coordinator.data or {}).get(key, [])
-        if drop_past:
-            records = self._future_only(records)
         out: list[Forecast] = []
         for d in records:
             if not d.get("datetime"):
@@ -128,23 +127,6 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
 
     async def async_forecast_daily(self) -> list[Forecast]:
         return self._forecast("daily")
-
-    async def async_forecast_hourly(self) -> list[Forecast]:
-        # Nguồn chỉ có 4 điểm 1/7/13/19 của HÔM NAY -> bỏ điểm đã qua để card
-        # không hiển thị giờ quá khứ. Giữ điểm của giờ hiện tại (mốc >= đầu giờ).
-        return self._forecast("hourly", drop_past=True)
-
-    @staticmethod
-    def _future_only(records: list[dict]) -> list[dict]:
-        """Lọc bỏ điểm có datetime trước giờ hiện tại; nếu lọc hết (cuối ngày mọi
-        điểm đã qua) thì GIỮ NGUYÊN để tránh forecast rỗng làm card quay vòng."""
-        floor = dt_util.now().replace(minute=0, second=0, microsecond=0)
-        future = []
-        for d in records:
-            when = dt_util.parse_datetime(d.get("datetime") or "")
-            if when is None or when >= floor:
-                future.append(d)
-        return future or records
 
     @callback
     def _handle_coordinator_update(self) -> None:
