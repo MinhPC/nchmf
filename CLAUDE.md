@@ -60,10 +60,11 @@ Người dùng chỉ cần **Reconfigure (bản đồ)** để chỉnh đúng ph
 | `config_flow.py` | 2 bước: `_async_center_step` (bản đồ, dùng chung user/reconfigure) → `async_step_station` (dropdown trạm gần) + `NchmfOptionsFlow` (scan interval). |
 | `parser.py` | `transform`, `map_condition`, `wind_direction(deg)`, `pick_current`, `parse_obs` (quan trắc), `wind_bearing_vn` + `haversine_km`/`sample_points`/`rank_stations`. **Hàm THUẦN, test ngoài HA.** |
 | `weather.py` | Weather entity — condition (+ `clear-night`) + current + forecast **daily & hourly** + `native_wind_bearing` + device_info. |
-| `sensor.py` | 4 sensor: nhiệt độ/độ ẩm/gió (tên theo device_class) + **xác suất mưa** (`precipitation_probability`, `translation_key`). Chung device_info. |
+| `sensor.py` | 9 sensor: nhiệt độ/độ ẩm/gió/**lượng mưa** (tên theo device_class) + **xác suất mưa/mây/hướng gió/điều kiện** (`translation_key`) + **trạm quan trắc** (diagnostic). Chung device_info. |
+| `binary_sensor.py` | 1 binary_sensor **cảnh báo** (`warning`, device_class `safety`): on khi `current["warning"]` (Weather_War) khác rỗng. Chung device_info. |
 | `diagnostics.py` | `async_get_config_entry_diagnostics` — xuất coordinator.data + entry (lat/lon). |
 | `const.py` | `DOMAIN`, `CONF_LAT/LON/NAME/SCAN_INTERVAL`, `API_URL`, `DEFAULT_LAT/LON`, `ICON_BASE`, `ATTRIBUTION`, `*_SCAN_INTERVAL_MINUTES`, `ISSUE_NO_DATA`, `USER_AGENT`. |
-| `manifest.json` | `config_flow: true`, `requirements: []` (không còn bs4), `version: 2.0.0`. |
+| `manifest.json` | `config_flow: true`, `integration_type: service`, `requirements: []` (không còn bs4), `version: 2.5.0`. |
 | `strings.json` + `translations/` | config flow, options, entity (precipitation_probability), issues (no_data) — en/vi. |
 
 Kiến trúc: 1 `DataUpdateCoordinator` gọi API + `transform` 1 lần, mọi entity là
@@ -119,11 +120,12 @@ Forecasts[]           -> mỗi phần tử:
                cloud:float, condition:str, condition_text:str, icon:str|None}, ... ],  # 4 điểm
   "daily":  [ {datetime:isostr, temperature:int(Tmax), templow:int(Tmin), ...cùng key phụ}, ... ], # 10 ngày
   # gắn ở coordinator._async_update_data (cần dt_util.now()):
-  "current": {...},          # = {**điểm hourly gần giờ, **parse_obs(quan trắc)} nếu có obs;
-                             #   obs đè temp/humidity/wind/condition/precipitation, GIỮ pop từ forecast.
+  "current": {...},          # = {**điểm hourly gần giờ, **{k:v của parse_obs nếu v!=None}} khi có obs;
+                             #   obs đè temp/humidity/wind/condition/precipitation NHƯNG chỉ field
+                             #   có giá trị (field obs None KHÔNG xoá forecast tốt), GIỮ pop từ forecast.
                              #   parse_obs thêm: obs_station, obs_time. {} nếu cả hai rỗng.
   "current_source": str,     # "observation" (có quan trắc) | "forecast" (fallback)
-  "update_time": str,        # datetime của current
+  "update_time": str,        # giờ QUAN TRẮC thật (obs_time trong ngày) nếu có, else datetime điểm dự báo
 }
 ```
 
@@ -174,6 +176,14 @@ entity_id do HA sinh từ tên device (entry.title = tên phường) + tên enti
 - Sensor Độ ẩm (%, humidity)
 - Sensor Gió (m/s, wind_speed; attr `wind_dir`, `wind_bearing`)
 - Sensor **Xác suất mưa** (%, `translation_key: precipitation_probability`; attr `precipitation`)
+- Sensor **Lượng mưa** (mm, device_class precipitation) — current.precipitation
+- Sensor **Lượng mây** (%, `translation_key: cloud`) — Cloud (0..1) ×100
+- Sensor **Hướng gió** (nhãn VN, `translation_key: wind_direction`; attr `wind_bearing` độ)
+- Sensor **Điều kiện** (mô tả VN, `translation_key: condition`; attr `condition` mã HA, `icon_url`)
+- Sensor **Trạm quan trắc** (diagnostic, `translation_key: observation_station`; attr
+  `observation_time`, `current_source`) — tên trạm gần nhất nguồn 'hiện tại'
+- Binary sensor **Cảnh báo** (device_class `safety`, `translation_key: warning`; on khi có
+  cảnh báo `Weather_War`; attr `warning` = nội dung cảnh báo)
 
 Tất cả có `attribution` = KTTV. (Sensor "10 ngày qua" của bản HTML đã BỎ — API không có
 chuỗi quá khứ; thay bằng sensor xác suất mưa.)
@@ -269,13 +279,25 @@ logger:
   (`ICON_BASE + Icon`) — có thể map sang `entity_picture` nếu muốn hình gốc thay icon HA.
 - **Nhiệt độ/độ ẩm theo giờ ra sensor riêng**: hiện chỉ có `current` + forecast; nếu muốn
   4 điểm giờ thành lịch sử, tự làm template/statistics.
-- **Cảnh báo (`Weather_War`)**: API có trường này (thường rỗng) — có thể thành binary_sensor.
+- **Cảnh báo (`Weather_War`)**: ĐÃ LÀM ở v2.4.0 — `binary_sensor.py` (device_class safety).
 - **Brand icon**: đã có trong `brand/` (xem lịch sử); từ HA 2026.3 local brand tự hiển thị.
 
 ---
 
 ## 12. Phiên bản
 
+- **v2.5.0** — **Thêm 5 sensor** để phơi toàn bộ dữ liệu 'hiện tại' ra entity riêng (không
+  chỉ trong custom card): **Lượng mưa** (device_class precipitation), **Lượng mây** (Cloud×100 %),
+  **Hướng gió** (nhãn VN + attr độ), **Điều kiện** (mô tả VN + attr mã HA/icon KTTV), và
+  **Trạm quan trắc** (diagnostic). Tổng sensor: 4 → 9. Tên qua `translation_key` (en/vi).
+- **v2.4.0** — **binary_sensor cảnh báo + 2 fix quan trắc + integration_type**.
+  (1) `binary_sensor.py`: entity **Cảnh báo** (device_class `safety`, on khi `Weather_War`
+  khác rỗng) → automation bắn thông báo. (2) **Fix merge quan trắc**: chỉ đè field CÓ giá trị
+  của obs lên forecast (`{k:v for … if v is not None}`) — trước đây obs field `None` (gió "lặng"
+  không parse ra tốc độ, Weather_Text rỗng) **xoá mất** giá trị forecast hợp lệ → gió/điều kiện
+  hiện tại về None. (3) **Fix `update_time`**: khi nguồn là quan trắc, dùng **giờ quan trắc thật**
+  (`obs_time` trong ngày) thay vì datetime điểm dự báo. (4) `manifest`: thêm `integration_type: service`.
+- **v2.3.2** — thêm lượng mưa (`precipitation`/`Prec`) vào mảng `forecast_daily`/`forecast_hourly`.
 - **v2.3.1** — thêm attr `wind_speed_ms` (tốc độ gió thô m/s cho hiện tại). HA quy đổi
   `native_wind_speed` sang đơn vị hệ thống (thường km/h) ở attr `wind_speed` → dùng
   `wind_speed_ms` trong custom card để khớp m/s như trang chủ. (Forecast arrays vốn đã là m/s thô.)

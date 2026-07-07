@@ -9,6 +9,8 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     PERCENTAGE,
+    EntityCategory,
+    UnitOfPrecipitationDepth,
     UnitOfSpeed,
     UnitOfTemperature,
 )
@@ -31,6 +33,11 @@ async def async_setup_entry(
             NchmfHumidity(coordinator, entry),
             NchmfWind(coordinator, entry),
             NchmfPop(coordinator, entry),
+            NchmfPrecip(coordinator, entry),
+            NchmfCloud(coordinator, entry),
+            NchmfWindDir(coordinator, entry),
+            NchmfCondition(coordinator, entry),
+            NchmfObsStation(coordinator, entry),
         ]
     )
 
@@ -120,3 +127,100 @@ class NchmfPop(_Base):
     @property
     def extra_state_attributes(self) -> dict:
         return {"precipitation": self._current.get("precipitation")}
+
+
+class NchmfPrecip(_Base):
+    """Lượng mưa (mm) — quan trắc (Rainfall) nếu có, else forecast (Prec)."""
+
+    _attr_device_class = SensorDeviceClass.PRECIPITATION
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = UnitOfPrecipitationDepth.MILLIMETERS
+
+    def __init__(self, coordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, "precipitation")
+
+    @property
+    def native_value(self):
+        return self._current.get("precipitation")
+
+
+class NchmfCloud(_Base):
+    """Lượng mây (%) — Cloud (0..1) quy đổi sang phần trăm."""
+
+    _attr_translation_key = "cloud"
+    _attr_icon = "mdi:weather-cloudy"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = PERCENTAGE
+
+    def __init__(self, coordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, "cloud")
+
+    @property
+    def native_value(self):
+        c = self._current.get("cloud")
+        if c is None:
+            return None
+        # Cloud thường là 0..1; nếu đã là % (>1) thì giữ nguyên.
+        return round(c * 100) if c <= 1 else round(c)
+
+
+class NchmfWindDir(_Base):
+    """Hướng gió (nhãn tiếng Việt); độ ở attr wind_bearing."""
+
+    _attr_translation_key = "wind_direction"
+    _attr_icon = "mdi:compass-outline"
+
+    def __init__(self, coordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, "wind_direction")
+
+    @property
+    def native_value(self):
+        return self._current.get("wind_dir") or None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {"wind_bearing": self._current.get("wind_bearing")}
+
+
+class NchmfCondition(_Base):
+    """Điều kiện thời tiết (mô tả tiếng Việt của KTTV)."""
+
+    _attr_translation_key = "condition"
+    _attr_icon = "mdi:weather-partly-cloudy"
+
+    def __init__(self, coordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, "condition")
+
+    @property
+    def native_value(self):
+        return self._current.get("condition_text") or None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "condition": self._current.get("condition"),  # mã HA
+            "icon_url": self._current.get("icon"),  # icon KTTV thật
+        }
+
+
+class NchmfObsStation(_Base):
+    """Trạm quan trắc gần nhất (nguồn 'hiện tại'). Sensor chẩn đoán."""
+
+    _attr_translation_key = "observation_station"
+    _attr_icon = "mdi:map-marker-radius-outline"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, "observation_station")
+
+    @property
+    def native_value(self):
+        return self._current.get("obs_station") or None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        data = self.coordinator.data or {}
+        return {
+            "observation_time": self._current.get("obs_time"),
+            "current_source": data.get("current_source"),
+        }

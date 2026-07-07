@@ -49,6 +49,23 @@
     "sensor": {
       "precipitation_probability": {
         "name": "Precipitation probability"
+      },
+      "cloud": {
+        "name": "Cloud cover"
+      },
+      "wind_direction": {
+        "name": "Wind direction"
+      },
+      "condition": {
+        "name": "Condition"
+      },
+      "observation_station": {
+        "name": "Observation station"
+      }
+    },
+    "binary_sensor": {
+      "warning": {
+        "name": "Weather warning"
       }
     }
   },

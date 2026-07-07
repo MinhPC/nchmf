@@ -49,6 +49,23 @@
     "sensor": {
       "precipitation_probability": {
         "name": "Xác suất mưa"
+      },
+      "cloud": {
+        "name": "Lượng mây"
+      },
+      "wind_direction": {
+        "name": "Hướng gió"
+      },
+      "condition": {
+        "name": "Điều kiện"
+      },
+      "observation_station": {
+        "name": "Trạm quan trắc"
+      }
+    },
+    "binary_sensor": {
+      "warning": {
+        "name": "Cảnh báo thời tiết"
       }
     }
   },

@@ -31,7 +31,7 @@ from .parser import parse_obs, pick_current, rank_stations, sample_points, trans
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["weather", "sensor"]
+PLATFORMS = ["weather", "sensor", "binary_sensor"]
 
 
 async def async_fetch_json(hass: HomeAssistant, lat, lon) -> dict:
@@ -124,18 +124,43 @@ class NchmfCoordinator(DataUpdateCoordinator):
 
         # 'current': ưu tiên QUAN TRẮC thật (trạm gần nhất); nếu thiếu -> dùng điểm
         # dự báo gần giờ hiện tại. PoP/giờ luôn lấy từ forecast (quan trắc không có).
-        fc_current = pick_current(data["hourly"], dt_util.now().hour)
+        now = dt_util.now()
+        fc_current = pick_current(data["hourly"], now.hour)
         obs: dict = {}
         if not isinstance(obs_payload, Exception):
             try:
                 obs = parse_obs(obs_payload)
             except Exception:  # noqa: BLE001
                 obs = {}
-        data["current"] = {**fc_current, **obs} if obs else fc_current
-        data["current_source"] = "observation" if obs else "forecast"
-        data["update_time"] = data["current"].get("datetime")
+        # Chỉ đè field CÓ giá trị của quan trắc lên forecast: field quan trắc bị
+        # thiếu (vd gió "lặng" không parse ra tốc độ, Weather_Text rỗng) sẽ KHÔNG
+        # xoá mất giá trị forecast hợp lệ (tránh gió/điều kiện hiện tại về None).
+        if obs:
+            data["current"] = {
+                **fc_current,
+                **{k: v for k, v in obs.items() if v is not None},
+            }
+            data["current_source"] = "observation"
+        else:
+            data["current"] = fc_current
+            data["current_source"] = "forecast"
+        data["update_time"] = self._current_time(now, obs, data["current"])
         self._check_health(data)
         return data
+
+    @staticmethod
+    def _current_time(now, obs: dict, current: dict) -> str | None:
+        """Thời điểm của 'current': giờ QUAN TRẮC thật nếu có (obs_time là giờ trong
+        ngày), ngược lại datetime của điểm dự báo gần giờ hiện tại."""
+        obs_time = obs.get("obs_time") if obs else None
+        if obs_time is not None:
+            try:
+                return now.replace(
+                    hour=int(obs_time), minute=0, second=0, microsecond=0
+                ).isoformat()
+            except (ValueError, TypeError):
+                pass
+        return current.get("datetime")
 
     def _check_health(self, data: dict) -> None:
         """Tạo/xoá repair issue: gọi OK nhưng thiếu dữ liệu lõi = API đổi schema."""
