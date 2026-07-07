@@ -119,6 +119,7 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
                     "condition": d.get("condition"),
                     "condition_text": d.get("condition_text"),
                     "precipitation_probability": d.get("pop"),
+                    "precipitation": d.get("precipitation"),  # lượng mưa (mm)
                     "humidity": d.get("humidity"),
                     "wind_speed": d.get("wind_speed"),
                     "wind_dir": d.get("wind_dir"),
