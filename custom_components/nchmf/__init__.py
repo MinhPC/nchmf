@@ -115,12 +115,13 @@ class NchmfCoordinator(DataUpdateCoordinator):
         )
 
         if isinstance(forecast_payload, Exception):
-            raise UpdateFailed(f"Lỗi gọi API KTTV: {forecast_payload}")
+            return self._keep_last(f"Lỗi gọi API KTTV: {forecast_payload}")
 
         try:
             data = transform(forecast_payload)
         except Exception as err:  # noqa: BLE001
-            raise UpdateFailed(f"Lỗi chuẩn hoá JSON KTTV: {err}") from err
+            return self._keep_last(f"Lỗi chuẩn hoá JSON KTTV: {err}", err)
+        data["stale"] = False
 
         # 'current': ưu tiên QUAN TRẮC thật (trạm gần nhất); nếu thiếu -> dùng điểm
         # dự báo gần giờ hiện tại. PoP/giờ luôn lấy từ forecast (quan trắc không có).
@@ -147,6 +148,15 @@ class NchmfCoordinator(DataUpdateCoordinator):
         data["update_time"] = self._current_time(now, obs, data["current"])
         self._check_health(data)
         return data
+
+    def _keep_last(self, msg: str, err: Exception | None = None) -> dict:
+        """Fetch lỗi: giữ dữ liệu lần trước (đánh dấu stale) thay vì làm entity
+        unavailable. Chưa có dữ liệu lần nào (lần nạp đầu) -> UpdateFailed như cũ."""
+        if not self.data:
+            raise UpdateFailed(msg) from err
+        if not self.data.get("stale"):
+            _LOGGER.warning("%s — giữ dữ liệu gần nhất", msg)
+        return {**self.data, "stale": True}
 
     @staticmethod
     def _current_time(now, obs: dict, current: dict) -> str | None:

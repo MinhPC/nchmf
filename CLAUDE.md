@@ -64,7 +64,7 @@ Người dùng chỉ cần **Reconfigure (bản đồ)** để chỉnh đúng ph
 | `binary_sensor.py` | 1 binary_sensor **cảnh báo** (`warning`, device_class `safety`): on khi `current["warning"]` (Weather_War) khác rỗng. Chung device_info. |
 | `diagnostics.py` | `async_get_config_entry_diagnostics` — xuất coordinator.data + entry (lat/lon). |
 | `const.py` | `DOMAIN`, `CONF_LAT/LON/NAME/SCAN_INTERVAL`, `API_URL`, `DEFAULT_LAT/LON`, `ICON_BASE`, `ATTRIBUTION`, `*_SCAN_INTERVAL_MINUTES`, `ISSUE_NO_DATA`, `USER_AGENT`. |
-| `manifest.json` | `config_flow: true`, `integration_type: service`, `requirements: []` (không còn bs4), `version: 2.5.0`. |
+| `manifest.json` | `config_flow: true`, `integration_type: service`, `requirements: []` (không còn bs4), `version: 2.10.0`. |
 | `strings.json` + `translations/` | config flow, options, entity (precipitation_probability), issues (no_data) — en/vi. |
 
 Kiến trúc: 1 `DataUpdateCoordinator` gọi API + `transform` 1 lần, mọi entity là
@@ -125,6 +125,7 @@ Forecasts[]           -> mỗi phần tử:
                              #   có giá trị (field obs None KHÔNG xoá forecast tốt), GIỮ pop từ forecast.
                              #   parse_obs thêm: obs_station, obs_time. {} nếu cả hai rỗng.
   "current_source": str,     # "observation" (có quan trắc) | "forecast" (fallback)
+  "stale": bool,             # True = lần update gần nhất lỗi, đang giữ data cũ (v2.10.0)
   "update_time": str,        # giờ QUAN TRẮC thật (obs_time trong ngày) nếu có, else datetime điểm dự báo
 }
 ```
@@ -295,6 +296,12 @@ logger:
 
 ## 12. Phiên bản
 
+- **v2.10.0** — **Giữ dữ liệu gần nhất khi mất kết nối**. Trước đây forecast fetch/transform
+  lỗi → `UpdateFailed` → mọi entity `unavailable`. Giờ `NchmfCoordinator._keep_last` trả lại
+  `self.data` lần trước kèm `data["stale"]=True` (log warning CHỈ 1 lần mỗi đợt lỗi); fetch OK
+  lại → `stale=False`. Chưa có data (lần nạp đầu) vẫn `UpdateFailed` → ConfigEntryNotReady như
+  cũ. `update_time` giữ giờ của dữ liệu cũ. Weather thêm attr `stale`. KHÔNG persist qua
+  restart HA (cần `Store` nếu muốn). Obs lỗi riêng lẻ vẫn fallback sang forecast như trước.
 - **v2.9.0** — **Lấy nốt field còn sót của quan trắc**. Review đối chiếu API thật:
   endpoint forecast đã lấy 100% field; endpoint quan trắc (`api/wetherlocal`) còn 3 field
   chưa dùng. Thêm: (1) **`Visibility`** → `parse_obs["visibility"]` → weather

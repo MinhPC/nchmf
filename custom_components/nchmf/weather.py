@@ -110,6 +110,8 @@ class NchmfWeather(CoordinatorEntity, WeatherEntity):
             "update_time": data.get("update_time"),
             # Nguồn 'hiện tại': quan trắc thật (trạm gần nhất) hay dự báo.
             "current_source": data.get("current_source"),
+            # True = lần cập nhật gần nhất lỗi, đang hiển thị dữ liệu cũ.
+            "stale": data.get("stale", False),
             "observation_station": cur.get("obs_station"),
             # Phường thật của điểm quan trắc (StationName), tách với tên trạm gần nhất.
             "observation_ward": cur.get("obs_ward"),
